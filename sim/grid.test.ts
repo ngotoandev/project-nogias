@@ -21,6 +21,11 @@ describe('grid', () => {
     expect(stepToward({ x: 0, y: 0 }, { x: 5, y: 1 }, open)).toEqual({ x: 1, y: 0 });
   });
 
+  it('prefers x-axis on equal-distance tie', () => {
+    const open = () => true;
+    expect(stepToward({ x: 0, y: 0 }, { x: 1, y: 1 }, open)).toEqual({ x: 1, y: 0 });
+  });
+
   it('routes around a blocked primary cell', () => {
     const blockedAt = (c: Cell) => !(c.x === 1 && c.y === 0);
     expect(stepToward({ x: 0, y: 0 }, { x: 5, y: 2 }, blockedAt)).toEqual({ x: 0, y: 1 });
