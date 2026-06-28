@@ -23,7 +23,7 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
   const units: Unit[] = setup.units.map((u) => {
     const derived = deriveStats(u.attrs);
     return {
-      id: u.id, side: u.side, attrs: u.attrs, priority: u.priority,
+      id: u.id, side: u.side, attrs: { ...u.attrs }, priority: u.priority,
       pos: { x: u.pos.x, y: u.pos.y }, hp: derived.maxHp, derived, gauge: 0,
     };
   });
@@ -60,7 +60,7 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
         grid.inBounds(c) && !grid.isBlocked(c) && !occupied(c, actor.id);
       const next = stepToward(actor.pos, target.pos, canEnter);
       if (next.x === actor.pos.x && next.y === actor.pos.y) break; // stuck
-      events.push({ t: 'move', id: actor.id, from: { x: actor.pos.x, y: actor.pos.y }, to: next });
+      events.push({ t: 'move', id: actor.id, from: { x: actor.pos.x, y: actor.pos.y }, to: { x: next.x, y: next.y } });
       actor.pos = next;
     }
 
