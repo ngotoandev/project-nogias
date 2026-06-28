@@ -20,6 +20,8 @@ export function nextActor(units: Unit[]): { actor: Unit; ticks: number } | null 
       const actor = eligible[0]!;
       return { actor, ticks };
     }
+    // No eligible unit and nobody can gain tempo -> stop instead of looping forever.
+    if (alive.every((u) => u.derived.tempoRate <= 0)) return null;
     for (const u of alive) u.gauge += u.derived.tempoRate;
     ticks++;
   }

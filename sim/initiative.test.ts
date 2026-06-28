@@ -37,4 +37,16 @@ describe('nextActor', () => {
     const r = nextActor([dead, live]);
     expect(r?.actor.id).toBe('live');
   });
+
+  it('returns null when no living unit can gain tempo', () => {
+    const a = unit('a', 0);
+    const b = unit('b', 0);
+    expect(nextActor([a, b])).toBeNull();
+  });
+
+  it('breaks gauge+priority ties by id ascending', () => {
+    const z = unit('z', 50, 5);
+    const a = unit('a', 50, 5);
+    expect(nextActor([z, a])?.actor.id).toBe('a');
+  });
 });
