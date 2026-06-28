@@ -122,7 +122,7 @@ No manual in-fight control. The player sets composition + per-unit priority befo
 
 ### 4.1 Principles
 
-1. **One authoritative deterministic sim, written once, run everywhere.** TypeScript/Node. Solo runs it as a **local sidecar process**; online runs the **same code on a server**. One implementation ⇒ no cross-language parity problem.
+1. **One authoritative deterministic sim, written once, run everywhere.** TypeScript. No cross-*language* port — but it runs in **two JS runtimes**: **V8** in the solo Node sidecar, and **goja** (Go) inside the **Nakama** server for online re-sim + lockstep. So the determinism work is **V8↔goja parity** (§4.6) — the project's critical path — not a rewrite.
 2. **The client is a pure renderer + input device.** It computes no game logic.
 3. **The sim is clockless; a driver advances it.** Who drives the tick decides pausing.
 4. **Determinism is a first-class, tested invariant**, not an aspiration.
@@ -146,22 +146,23 @@ No manual in-fight control. The player sets composition + per-unit priority befo
 ### 4.3 Layers (single responsibility, well-defined interfaces)
 
 ```
-/shared   config • types • rng          single source of truth; deterministic primitives
-/sim      stat-resolve • conquest-map • tile-fight (turn engine) • generation • run-loop
+/shared   config • types • rng              single source of truth; deterministic primitives
+/sim      stat-resolve • conquest-map • tile-fight (turn engine) • run-loop   <- parity-critical, replayed (V8<->goja)
+/meta     generation • economy • crafting • progression persistence            <- server-authoritative; NOT replayed
 /client   Godot 4.7 GDScript: map view • fight view • Home/Barracks UI • input->commands • interpolation
-/server   (beta+) generation authority • lockstep relay • persistence • identity • telemetry
+/server   (beta+) Nakama: goja re-sim + lockstep relay + /meta authority + identity + telemetry
 /tools    balance Monte-Carlo • replay viewer • config validation
 ```
 
 - **`/shared`** — all tuning (stat coefficients, formula constants, class/trait/personality catalogs, level-scaled archetype templates, gear grades, campaign/tile tables, economy numbers), the seeded integer PRNG (`rng.ts`; never `Math.random`), and shared data shapes (`UnitAttribute`, `UnitTrait`, `UnitPersonality`, `Hero`, `RankFile`, derived stats, commands, snapshots). Pure data; consumed by `/sim`, validated by `/server`.
-- **`/sim`** — the deterministic engine: a pure function of `(state, commands, seed) -> next state`. No I/O, no rendering, no wall-clock. Sub-engines:
+- **`/sim`** — the deterministic engine, **parity-critical** (this is what gets replayed for bank-time re-sim and lockstep, so it must be V8↔goja bit-identical): a pure function of `(state, commands, seed) -> next state`. No I/O, no rendering, no wall-clock. Sub-engines:
   - **stat resolution** — primaries → derived (GDD Part II formulas). Pure.
   - **conquest-map** — tiles, N/S/E/W adjacency, ownership, army travel, commit slots, fronts; processes map commands.
   - **tile-fight** — the turn-based tempo-initiative grid skirmish (§3); emits per-turn events.
-  - **generation** — hero rolls, traits, personality, gear crafting, map/garrison generation; all seeded.
   - **run orchestration** — run state, capture, attrition persistence, rewards, banking, extract/wipe, Weary.
+- **`/meta`** — **server-authoritative, NOT cross-runtime-replayed:** generation (hero rolls, traits, personality, gear crafting, map/garrison generation — all seeded, server-side per the GDD), economy, crafting, and progression persistence. Kept out of `/sim` precisely because it never needs V8↔goja parity.
 - **`/client`** — Godot 4.7, GDScript. Renders snapshots, tweens units cell→cell, fires audio cues, translates clicks into commands. **Computes zero game logic.**
-- **`/server`** (beta+) — reuses `/sim` + `/shared`. Owns generation (client cannot influence rolls — GDD requirement), relays per-tick inputs for co-op lockstep, holds the authoritative save, validates via per-tick state hashes, ingests telemetry. Identity is device/local now, Steam later (swap provider only).
+- **`/server`** (beta+) — **Nakama**. Hosts the `/sim` re-sim in **goja** (Go) for verified bank-time re-sim and co-op lockstep relay, owns `/meta` (generation the client cannot influence — GDD requirement) + the authoritative save, validates via per-tick state hashes, ingests telemetry. Identity is device/local now, Steam later (swap provider only).
 - **`/tools`** (dev-side) — the win-probability **Monte-Carlo balance instrument** (headless `/sim` runs; dev-only, never a player readout), a **replay viewer** (seed + input log → deterministic playback), and **config validation**.
 
 ### 4.4 Two decisions that make it click
@@ -173,26 +174,28 @@ No manual in-fight control. The player sets composition + per-unit priority befo
 
 - **Commands in** (tick-stamped, validated): `DispatchArmy{armyId, fromTile, toTile, gate}`, `Reinforce`, `Retreat`, `Extract`, `SetPriority` (pre-run/Barracks), `HomeAction{...}`. The client never mutates sim state directly.
 - **Snapshots + event stream out:** authoritative state deltas plus a semantic event stream — `UnitActed`, `DamageDealt`, `UnitDied`, `TileCaptured`, `SlotFreed`, `FrontUnderPressure`, etc. **The same events drive both rendering and audio cues**, which is how the GDD's "command several fronts by ear" works.
-- **Transport:** local socket or stdio between Godot and the sidecar, length-prefixed messages (binary or compact JSON). Fixed-tick cadence; turn-based fights keep payloads small.
+- **Transport:** **localhost TCP, newline-delimited JSON**, with the bridge API doubling as the wire protocol (the proven sidecar setup). Fixed-tick cadence; turn-based fights keep payloads small. The same bridge is the server's re-sim host online.
 
 ### 4.6 Determinism strategy (cross-cutting, from the first commit)
 
 - Fixed-point / integer math in the sim; seeded PRNG; deterministic iteration order (no unordered-map hazards); no wall-clock or `Math.random` in `/sim`.
 - **State-hash every tick** for desync detection (online).
 - **Replay = seed + input log.** This one property powers replay, the daily seed, telemetry margins, and co-op lockstep.
-- **CI hash-replay test from day one:** same seed + same input log must produce an identical end-state hash.
+- **Parity target = V8 (solo sidecar) ↔ goja (Nakama server).** Only `/sim` must be cross-runtime-identical (it is what gets replayed); `/meta` is server-authoritative and never re-run cross-runtime.
+- **CI hash-replay test from day one:** the same `(seed + input log)` must produce an identical end-state hash **in both V8 and goja**. This hardening is the determinism critical path.
 
 ### 4.7 Risks & mitigations
 
-- **Sidecar packaging + per-tick IPC** — ships Node alongside Godot and serializes each tick. Mitigated by turn-based chunky deltas; the future optimization is compiling `/sim` to **WASM and running it inside Godot**, removing the separate process while keeping the one TS codebase. Not required for alpha.
+- **V8↔goja float/number parity** — the same TS `/sim` must produce bit-identical results in Node's V8 and Nakama's goja. This is the determinism critical path; mitigate with fixed-point/integer sim math and the CI hash-replay test across both runtimes from day one.
+- **Sidecar packaging + per-tick IPC** — ships Node alongside Godot and serializes each tick over localhost TCP. Chosen deliberately to stay on **stock Godot with no native per-platform builds** (over GodotJS-as-GDExtension). Mitigated by turn-based chunky deltas; remaining hardening is **single-binary sidecar packaging + dynamic port** — not WASM-in-Godot, which would reintroduce native builds.
 - **Client-logic leak** — the architecture's value collapses if logic creeps into GDScript. The client must stay a renderer; enforce in review.
 - **Determinism discipline** — a single violation (wall-clock, unordered iteration, uncontrolled float) breaks replay + lockstep. The CI hash-replay test is the guardrail.
 
 ### 4.8 Build order (matches existing phasing)
 
 - **Alpha:** `/shared` + `/sim` (map + tile-fight + generation + run loop) + `/client` (Godot) + local sidecar. Solo only; static garrisons; Humans; T1–T2; one campaign. Determinism + replay in from the start.
-- **Beta:** add `/server` (verified saves, daily seed), active enemies, procedural maps, more content.
-- **MP phase:** add the lockstep relay + authoritative generation/persistence, reusing `/sim` untouched.
+- **Beta:** add the **Nakama** server (verified saves, daily seed via goja re-sim), active enemies, procedural maps, more content. Cross-runtime (V8↔goja) determinism hardening is the critical path here.
+- **MP phase:** add the lockstep relay + `/meta` authority on Nakama, reusing `/sim` untouched.
 
 ---
 
