@@ -1,0 +1,21 @@
+# Node / TypeScript (sim, server, tools)
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.env
+.env.local
+
+# Godot 4 client
+.godot/
+.import/
+export_presets.cfg
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
