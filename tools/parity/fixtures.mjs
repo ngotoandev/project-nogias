@@ -8,6 +8,8 @@
 //   headstrong-charge-seed3          (db26f7c9) — headstrong ranged charges to melee instead of kiting
 //   stupid-misfire-seed80            (e7eaf7bb) — stupid melee unit misfires basic attack (seed=80 fires 10% gate)
 //   luckyfool-retarget-seed173       (068a1267) — luckyFool retargets to b2 (seed=173 fires 5% gate, idx=1)
+//   scripted-join-seed5              (7af6bcae) — A reinforcement joins at activation 3; turns B-win into A-win
+//   scripted-retreat-seed7           (63b649df) — b1 ordered to retreat E at activation 2; crosses width-7 grid, takes hits, exits retreated
 //   cleave-cluster-seed5             (57f7a0ff) — melee cleave unit reaches 2 adjacent enemies; casts Cleave hitting ≥2
 //   cleave-valve-seed7               (b028690d) — melee cleave unit vs lone tanky enemy; valve force-casts after VALVE_TICKS
 //   personality-tiebreak-seed1       (8d2831ec) — hotheaded lean: actor equidistant from a_tanky (str=10) + z_glass (str=4); picks z_glass (lower HP)
@@ -148,5 +150,51 @@ export const FIXTURES = [
       { id: 'a', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 2, y: 0 }, personality: { temperament: 'hotheaded' } },
       { id: 'z_glass', side: 'B', attackKind: 'melee', attrs: { str: 4, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 4, y: 0 } },
       { id: 'a_tanky', side: 'B', attackKind: 'melee', attrs: { str: 10, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } } ] } },
+  },
+  {
+    // seed=5: without join, weak a1(str=3) loses to strong b1(str=9) — B wins (hash e7c8414f).
+    // With join at activation 3: strong a2(str=9) reinforces A-side before step 3; A wins (hash 7af6bcae).
+    // Proves atActivation=3 fires, joiner participates in events, and the join hook is cross-runtime stable.
+    name: 'scripted-join-seed5',
+    expectedHash: '7af6bcae',
+    bundle: {
+      version: 2,
+      seed: 5,
+      setup: {
+        grid: { width: 5, height: 1, blocked: [] },
+        units: [
+          { id: 'a1', side: 'A', attrs: { str: 3, agi: 3, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
+          { id: 'b1', side: 'B', attrs: { str: 9, agi: 9, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 4, y: 0 } },
+        ],
+      },
+      script: [
+        { atActivation: 3, kind: 'join', specs: [
+          { id: 'a2', side: 'A', attrs: { str: 9, agi: 9, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
+        ]},
+      ],
+    },
+  },
+  {
+    // seed=7: width-7 grid; b1(str=4,agi=6) at x=3 ordered to retreat to E at activation 2.
+    // b1 has moveRange>1 and crosses the grid over 7 move events, taking hits from a1 en route.
+    // b1 exits with retreated=true and hp=4 (not dead). Without retreat, hash=9519bd6e, ticks=15.
+    // With retreat the fight lasts longer (ticks=19) and b1 survives as a retreated unit.
+    // Proves orderRetreat hook, cross-edge exit, and retreated survivor are cross-runtime stable.
+    name: 'scripted-retreat-seed7',
+    expectedHash: '63b649df',
+    bundle: {
+      version: 2,
+      seed: 7,
+      setup: {
+        grid: { width: 7, height: 1, blocked: [] },
+        units: [
+          { id: 'a1', side: 'A', attrs: { str: 8, agi: 4, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
+          { id: 'b1', side: 'B', attrs: { str: 4, agi: 6, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 3, y: 0 } },
+        ],
+      },
+      script: [
+        { atActivation: 2, kind: 'retreat', unitId: 'b1', exitEdge: 'E' },
+      ],
+    },
   },
 ];

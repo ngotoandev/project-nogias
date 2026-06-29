@@ -89,6 +89,17 @@ export interface ReplayBundle {
   seed: number;
 }
 
+export type FightScriptAction =
+  | { atActivation: number; kind: 'join'; specs: UnitSpec[] }
+  | { atActivation: number; kind: 'retreat'; unitId: string; exitEdge: Edge };
+
+export interface ScriptedFightBundle {
+  version: 2;
+  setup: FightSetup;
+  seed: number;
+  script: FightScriptAction[];
+}
+
 export interface ReplayResult {
   hash: string;        // hashFight of the final state — the parity target
   winner: Side | 'draw';
