@@ -131,6 +131,28 @@ describe('runTileFight', () => {
     expect(r.events.some((e) => e.t === 'move' && e.id === 'r')).toBe(false);
   });
 
+  it('a skilled unit charges Mana from basics and eventually casts Heavy Strike', () => {
+    // Ranged skilled striker vs a tanky-but-weak target: STR 20 gives the target
+    // HP/defense, but its MAGIC attack keys off INT (1) so it barely scratches the
+    // striker. The striker chips it safely for many turns, charging to a cast.
+    const setup: FightSetup = {
+      grid: { width: 5, height: 1, blocked: [] },
+      units: [
+        { id: 's', side: 'A', attrs: { str: 9, agi: 9, int: 9, lck: 1 }, attackKind: 'ranged', skill: 'heavyStrike', priority: 5, pos: { x: 0, y: 0 } },
+        { id: 't', side: 'B', attrs: { str: 20, agi: 1, int: 1, lck: 1 }, attackKind: 'magic', priority: 0, pos: { x: 4, y: 0 } },
+      ],
+    };
+    const r = runTileFight(setup, 11);
+    expect(r.events.some((e) => e.t === 'attack' && e.id === 's' && e.skill === 'heavyStrike')).toBe(true);
+  });
+
+  it('basic attacks carry no skill tag; only casts do', () => {
+    // baseSetup units have no skill -> never cast -> no attack event is skill-tagged.
+    const r = runTileFight(baseSetup, 42);
+    expect(r.events.some((e) => e.t === 'attack')).toBe(true);
+    expect(r.events.every((e) => e.t !== 'attack' || e.skill === undefined)).toBe(true);
+  });
+
   it('a wall on the line blocks the ranged shot until the unit repositions', () => {
     const mk = (withWall: boolean): FightSetup => ({
       grid: { width: 5, height: 1, blocked: withWall ? [{ x: 2, y: 0 }] : [] },
