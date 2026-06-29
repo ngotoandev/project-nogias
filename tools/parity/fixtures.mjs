@@ -3,6 +3,7 @@
 //   canonical-baseSetup-seed42 (86e238c1) — all-melee two-channel combat
 //   ranged-wall-seed42         (1123ceff) — ranged range + terrain line-of-sight
 //   skill-cast-seed11          (b621e99d) — ranged+heavyStrike Mana charge + cast vs tanky/weak target
+//   reckless-duel-seed7        (PENDING)  — reckless melee unit vs plain unit; atk ramps as damaged
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {
@@ -46,6 +47,21 @@ export const FIXTURES = [
         units: [
           { id: 's', side: 'A', attackKind: 'ranged', skill: 'heavyStrike', attrs: { str: 9, agi: 9, int: 9, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
           { id: 't', side: 'B', attackKind: 'magic', attrs: { str: 20, agi: 1, int: 1, lck: 1 }, priority: 0, pos: { x: 4, y: 0 } },
+        ],
+      },
+    },
+  },
+  {
+    name: 'reckless-duel-seed7',
+    expectedHash: 'c28a905a',
+    bundle: {
+      version: 1,
+      seed: 7,
+      setup: {
+        grid: { width: 5, height: 1, blocked: [] },
+        units: [
+          { id: 'rk', side: 'A', attackKind: 'melee', traits: ['reckless'], attrs: { str: 6, agi: 5, int: 1, lck: 2 }, priority: 5, pos: { x: 0, y: 0 } },
+          { id: 'p',  side: 'B', attackKind: 'melee', attrs: { str: 6, agi: 4, int: 1, lck: 2 }, priority: 5, pos: { x: 4, y: 0 } },
         ],
       },
     },

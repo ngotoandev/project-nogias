@@ -1,6 +1,6 @@
 import type { Cell, EndReason, FightEvent, FightResult, FightSetup, Side, Unit } from '../shared/types';
 import { makeRng } from '../shared/rng';
-import { deriveStats } from './stats';
+import { deriveStats, effectiveDerived } from './stats';
 import { makeGrid, chebyshev, stepToward, hasLineOfSight } from './grid';
 import { nextActor, TEMPO_THRESHOLD } from './initiative';
 import { hashFight } from './hash';
@@ -18,6 +18,7 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
     return {
       id: u.id, side: u.side, attrs: { ...u.attrs }, priority: u.priority,
       pos: { x: u.pos.x, y: u.pos.y }, hp: derived.maxHp, derived, gauge: 0, mana: 0, skill: u.skill,
+      traits: u.traits ?? [], kills: 0, stallSinceTick: -1, fleeingSinceTick: -1,
     };
   });
   const events: FightEvent[] = [];
@@ -69,35 +70,37 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
 
     // In position: cast Heavy Strike if able, else a basic attack.
     if (inAttackPosition(actor, target)) {
-      const channel = actor.derived.channel;
-      const def = channel === 'physical' ? target.derived.physDef : target.derived.magicResist;
+      const aEff = effectiveDerived(actor, ctx);
+      const tEff = effectiveDerived(target, ctx);
+      const channel = aEff.channel;
+      const def = channel === 'physical' ? tEff.physDef : tEff.magicResist;
       const action = decideAction(actor, target, ctx);
       if (action === 'cast') {
         // Cast: spend Mana, guaranteed hit, amplified damage, then the normal crit roll.
         actor.mana -= HEAVY_STRIKE_COST;
-        let damage = heavyStrikeDamage(actor.derived.atk, def);
+        let damage = heavyStrikeDamage(aEff.atk, def);
         const crit = rng.intInRange(0, 9999) < actor.derived.critChanceBp;
         if (crit) damage = applyCrit(damage, actor.derived.critMultX100);
         target.hp -= damage;
-        addMana(target, manaGainOnTaken(damage, target.derived.maxHp, target.derived.manaChargeBp));
+        addMana(target, manaGainOnTaken(damage, tEff.maxHp, target.derived.manaChargeBp));
         const lethal = target.hp <= 0;
         events.push({ t: 'attack', id: actor.id, target: target.id, damage, crit, channel, lethal, skill: 'heavyStrike' });
-        if (lethal) { target.hp = 0; events.push({ t: 'death', id: target.id }); }
+        if (lethal) { target.hp = 0; events.push({ t: 'death', id: target.id }); actor.kills++; }
       } else {
         // Basic attack: hit roll -> mitigation -> crit roll (unchanged from Plan 4).
         const chance = hitBp(actor.derived.accuracyBp, target.derived.evasionBp);
         if (rng.intInRange(0, 9999) >= chance) {
           events.push({ t: 'miss', id: actor.id, target: target.id });
         } else {
-          let damage = mitigatedDamage(actor.derived.atk, def);
+          let damage = mitigatedDamage(aEff.atk, def);
           const crit = rng.intInRange(0, 9999) < actor.derived.critChanceBp;
           if (crit) damage = applyCrit(damage, actor.derived.critMultX100);
           target.hp -= damage;
           addMana(actor, manaGainOnHit(actor.derived.manaChargeBp));
-          addMana(target, manaGainOnTaken(damage, target.derived.maxHp, target.derived.manaChargeBp));
+          addMana(target, manaGainOnTaken(damage, tEff.maxHp, target.derived.manaChargeBp));
           const lethal = target.hp <= 0;
           events.push({ t: 'attack', id: actor.id, target: target.id, damage, crit, channel, lethal });
-          if (lethal) { target.hp = 0; events.push({ t: 'death', id: target.id }); }
+          if (lethal) { target.hp = 0; events.push({ t: 'death', id: target.id }); actor.kills++; }
         }
       }
     }

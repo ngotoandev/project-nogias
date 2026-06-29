@@ -34,3 +34,14 @@ export const M_TAKEN = 30;          // charge scale when taking damage
 export const M_TAKEN_CAP = 22;      // per-hit cap on charge-from-taken
 export const HEAVY_STRIKE_COST = 70;
 export const HEAVY_STRIKE_MULT = 180; // x100 (1.80)
+// Dynamic-stat traits (Plan 6):
+export const RECKLESS_ATK_BP = 6000;   // +atk fraction at 0 HP (basis points of atk)
+export const RECKLESS_DEF_BP = 2500;   // flat physDef penalty (always-on downside)
+export const SLOW_STARTER_RAMP_TICKS = 300;
+export const SLOW_STARTER_EARLY_BP = 2000; // −20% at t=0
+export const SLOW_STARTER_LATE_BP = 2000;  // +20% at full ramp
+export const BLOODTHIRSTY_ATK_PER_KILL = 4;
+export const LEADER_RADIUS = 2;
+export const LOYAL_FAR_RADIUS = 5;
+export const LOYAL_NEAR_BP = 1500;
+export const LOYAL_FAR_BP = 1500;

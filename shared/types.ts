@@ -2,6 +2,8 @@ export type Side = 'A' | 'B';
 export type AttackKind = 'melee' | 'ranged' | 'magic';
 export type DamageChannel = 'physical' | 'magic';
 export type SkillId = 'heavyStrike';
+export type TraitId = 'reckless' | 'slowStarter' | 'bloodthirsty' | 'loyal'
+  | 'coward' | 'headstrong' | 'stupid' | 'luckyFool';
 
 export interface Cell { x: number; y: number; }
 
@@ -30,6 +32,7 @@ export interface UnitSpec {
   attrs: Attributes;
   attackKind: AttackKind;
   skill?: SkillId;
+  traits?: TraitId[];
   priority: number;    // higher = more forward + more aggro
   pos: Cell;
 }
@@ -45,6 +48,10 @@ export interface Unit {
   gauge: number;
   mana: number;           // current; starts 0; no carry between fights
   skill?: SkillId;        // optional active (copied from the spec)
+  traits: TraitId[];
+  kills: number;
+  stallSinceTick: number;
+  fleeingSinceTick: number;
 }
 
 export interface GridSpec { width: number; height: number; blocked: Cell[]; }

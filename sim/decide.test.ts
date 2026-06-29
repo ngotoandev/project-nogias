@@ -10,7 +10,8 @@ function u(id: string, side: 'A' | 'B', x: number, y: number, opts: Partial<Unit
   const kind: AttackKind = 'melee';
   const derived = deriveStats(attrs, kind);
   return { id, side, attrs, priority: opts.priority ?? 5, pos: { x, y }, hp: opts.hp ?? derived.maxHp,
-    derived, gauge: 0, mana: opts.mana ?? 0, skill: opts.skill };
+    derived, gauge: 0, mana: opts.mana ?? 0, skill: opts.skill,
+    traits: opts.traits ?? [], kills: opts.kills ?? 0, stallSinceTick: -1, fleeingSinceTick: -1 };
 }
 
 const ctx = (units: Unit[]) => ({ totalTicks: 0, units, grid: makeGrid({ width: 8, height: 8, blocked: [] }) });

@@ -8,6 +8,7 @@ function unit(id: string, tempoRate: number, priority = 0, hp = 10): Unit {
     pos: { x: 0, y: 0 }, hp,
     derived: { maxHp: hp, atk: 1, channel: 'physical', physDef: 0, magicResist: 0, accuracyBp: 10000, evasionBp: 0, critChanceBp: 0, critMultX100: 125, tempoRate, moveRange: 1, attackRange: 1, maxMana: 100, manaChargeBp: 10000 },
     gauge: 0, mana: 0,
+    traits: [], kills: 0, stallSinceTick: -1, fleeingSinceTick: -1,
   };
 }
 
