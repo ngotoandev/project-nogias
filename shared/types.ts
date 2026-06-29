@@ -102,7 +102,27 @@ export interface ScriptedFightBundle {
 
 export interface ReplayResult {
   hash: string;        // hashFight of the final state — the parity target
-  winner: Side | 'draw';
+  winner?: Side | 'draw';
   ticks: number;
-  endReason: EndReason;
+  endReason?: EndReason;
 }
+
+// ── Conquest-map types (Plan 6) ──────────────────────────────────────────────
+export type MapEdge = 'N' | 'S' | 'E' | 'W';
+export type TileOwner = 'player' | 'enemy' | 'neutral';
+export type TileType = 'start' | 'enemy' | 'elite' | 'boss' | 'rest' | 'cache' | 'event' | 'recruit' | 'muster' | 'boon' | 'mysterious';
+export interface MapTile { id: string; type: TileType; owner: TileOwner; neighbors: { N?: string; S?: string; E?: string; W?: string }; garrison: UnitSpec[]; }
+export type ArmyState = 'garrisoned' | 'travelling' | 'contested' | 'retreating';
+export interface Army { id: string; units: UnitSpec[]; tile: string; state: ArmyState; target?: string; route?: string[]; travelGauge: number; }
+export interface MapSetup { tiles: MapTile[]; armies: { id: string; units: UnitSpec[]; tile: string }[]; }
+export type MapEvent =
+  | { t: 'dispatched'; armyId: string; toTile: string }
+  | { t: 'hopped'; armyId: string; from: string; to: string }
+  | { t: 'captured'; tile: string; by: string }
+  | { t: 'contested'; tile: string; attackers: string[] }
+  | { t: 'retreated'; armyId: string; to: string }
+  | { t: 'slotFreed'; tile: string; armyId: string }
+  | { t: 'rejected'; armyId: string; reason: string };
+export type MapCommand = { t: 'dispatch'; armyId: string; toTile: string; gate?: MapEdge } | { t: 'retreat'; armyId: string };
+export interface MapState { tiles: MapTile[]; armies: Army[]; totalTicks: number; events: MapEvent[]; }
+export interface ConquestBundle { version: 3; setup: MapSetup; seed: number; script: { atTick: number; commands: MapCommand[] }[]; }
