@@ -18,4 +18,19 @@ export const FIXTURES = [
       },
     },
   },
+  {
+    name: 'ranged-wall-seed42',
+    expectedHash: '1123ceff',
+    bundle: {
+      version: 1,
+      seed: 42,
+      setup: {
+        grid: { width: 6, height: 3, blocked: [{ x: 3, y: 1 }] },
+        units: [
+          { id: 'r', side: 'A', attackKind: 'ranged', attrs: { str: 3, agi: 6, int: 4, lck: 2 }, priority: 5, pos: { x: 0, y: 1 } },
+          { id: 'm', side: 'B', attackKind: 'melee', attrs: { str: 6, agi: 3, int: 1, lck: 2 }, priority: 5, pos: { x: 5, y: 1 } },
+        ],
+      },
+    },
+  },
 ];
