@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { runTileFight, initFight, stepFight, fightResult } from './tile-fight';
-import type { FightSetup } from '../shared/types';
+import { runTileFight, initFight, stepFight, fightResult, joinFight } from './tile-fight';
+import type { FightSetup, UnitSpec } from '../shared/types';
 
 const baseSetup: FightSetup = {
   grid: { width: 8, height: 8, blocked: [] },
@@ -520,5 +520,87 @@ describe('runTileFight luckyFool trait', () => {
       if (ev.t !== 'attack' && ev.t !== 'miss') continue;
       expect(ev.target).not.toBe('b3');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 2: joinFight — deploy units mid-fight, act at next turn boundary
+// ---------------------------------------------------------------------------
+
+describe('joinFight', () => {
+  it('a joiner deploys at gauge 0 and first acts only after a subsequent tempo fill', () => {
+    // 1v1 on a wide grid: a1 vs b1, both start far apart.
+    // Step until a1 has acted (moved or attacked) at least once, then join a2 as a side-A reinforcement.
+    // Assert: a2's id appears in a move/attack/miss event ONLY after at least one more stepFight call
+    // (not on the very next step immediately following joinFight), because gauge=0 means it must
+    // first fill to TEMPO_THRESHOLD before it can be selected by nextActor.
+    const joinSetup: FightSetup = {
+      grid: { width: 10, height: 10, blocked: [] },
+      units: [
+        { id: 'a1', side: 'A', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
+        { id: 'b1', side: 'B', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 9, y: 9 } },
+      ],
+    };
+    const state = initFight(joinSetup, 42);
+
+    // Step until a1 has acted at least once (emitted a move or attack event)
+    let a1HasActed = false;
+    while (!a1HasActed && !state.outcome) {
+      stepFight(state);
+      a1HasActed = state.events.some((e) => (e.t === 'move' || e.t === 'attack' || e.t === 'miss') && e.id === 'a1');
+    }
+    expect(a1HasActed).toBe(true);
+
+    // Record events count before join
+    const eventsBeforeJoin = state.events.length;
+
+    // Join a second A unit at a far but reachable cell
+    const joinerSpec: UnitSpec = {
+      id: 'a2', side: 'A', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, attackKind: 'melee', priority: 5,
+      pos: { x: 5, y: 5 },
+    };
+    joinFight(state, [joinerSpec]);
+
+    // Verify the joiner is in state.units with gauge=0 immediately after join
+    const joiner = state.units.find((u) => u.id === 'a2');
+    expect(joiner).toBeDefined();
+    expect(joiner!.gauge).toBe(0);
+
+    // The very next stepFight call must NOT produce an event from a2
+    // (gauge=0 means tempo hasn't filled yet — nextActor won't select it until it accumulates tempo).
+    stepFight(state);
+    const eventsAfterOneStep = state.events.slice(eventsBeforeJoin);
+    const a2ActedImmediately = eventsAfterOneStep.some((e) =>
+      (e.t === 'move' || e.t === 'attack' || e.t === 'miss' || e.t === 'misfire') && e.id === 'a2');
+    expect(a2ActedImmediately).toBe(false);
+
+    // Continue stepping: a2 must eventually act (participate in targeting / events)
+    let a2EverActs = false;
+    for (let i = 0; i < 10000 && !state.outcome && !a2EverActs; i++) {
+      stepFight(state);
+      a2EverActs = state.events.some((e) =>
+        (e.t === 'move' || e.t === 'attack' || e.t === 'miss' || e.t === 'misfire') && e.id === 'a2');
+    }
+    expect(a2EverActs).toBe(true);
+
+    // The joiner must have appeared in the final units list
+    expect(state.units.some((u) => u.id === 'a2')).toBe(true);
+  });
+
+  it('a fight with no joinFight call is byte-identical to runTileFight (specToUnit DRY did not change output)', () => {
+    const setup: FightSetup = {
+      grid: { width: 8, height: 8, blocked: [] },
+      units: [
+        { id: 'a1', side: 'A', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
+        { id: 'b1', side: 'B', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 7, y: 7 } },
+      ],
+    };
+    const direct = runTileFight(setup, 7);
+    const s = initFight(setup, 7);
+    while (!s.outcome) stepFight(s);
+    expect(fightResult(s).hash).toBe(direct.hash);
+    expect(fightResult(s).winner).toBe(direct.winner);
+    expect(fightResult(s).ticks).toBe(direct.ticks);
+    expect(fightResult(s).events).toEqual(direct.events);
   });
 });

@@ -1,4 +1,4 @@
-import type { Cell, EndReason, FightEvent, FightResult, FightSetup, Side, Unit } from '../shared/types';
+import type { Cell, EndReason, FightEvent, FightResult, FightSetup, Side, Unit, UnitSpec } from '../shared/types';
 import type { Rng } from '../shared/rng';
 import { makeRng } from '../shared/rng';
 import { deriveStats, effectiveDerived } from './stats';
@@ -21,19 +21,27 @@ export interface FightState {
   outcome: { winner: Side | 'draw'; endReason: EndReason } | null;
 }
 
+function specToUnit(u: UnitSpec): Unit {
+  const derived = deriveStats(u.attrs, u.attackKind);
+  return {
+    id: u.id, side: u.side, attrs: { ...u.attrs }, priority: u.priority,
+    pos: { x: u.pos.x, y: u.pos.y }, hp: derived.maxHp, derived, gauge: 0, mana: 0, skill: u.skill,
+    traits: u.traits ?? [], kills: 0, stallSinceTick: -1, fleeingSinceTick: -1,
+    temperament: u.personality?.temperament,
+  };
+}
+
 export function initFight(setup: FightSetup, seed: number): FightState {
   const rng = makeRng(seed);
   const grid = makeGrid(setup.grid);
-  const units: Unit[] = setup.units.map((u) => {
-    const derived = deriveStats(u.attrs, u.attackKind);
-    return {
-      id: u.id, side: u.side, attrs: { ...u.attrs }, priority: u.priority,
-      pos: { x: u.pos.x, y: u.pos.y }, hp: derived.maxHp, derived, gauge: 0, mana: 0, skill: u.skill,
-      traits: u.traits ?? [], kills: 0, stallSinceTick: -1, fleeingSinceTick: -1,
-      temperament: u.personality?.temperament,
-    };
-  });
+  const units: Unit[] = setup.units.map(specToUnit);
   return { units, grid, rng, events: [], totalTicks: 0, outcome: null };
+}
+
+export function joinFight(state: FightState, specs: UnitSpec[]): void {
+  for (const u of specs) {
+    state.units.push(specToUnit(u));
+  }
 }
 
 function finalize(state: FightState, sidesAlive: () => { a: boolean; b: boolean }): void {
