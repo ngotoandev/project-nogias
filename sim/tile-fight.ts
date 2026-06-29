@@ -6,7 +6,7 @@ import { nextActor, TEMPO_THRESHOLD } from './initiative';
 import { hashFight } from './hash';
 import { hitBp, mitigatedDamage, applyCrit, manaGainOnHit, manaGainOnTaken, heavyStrikeDamage } from './combat';
 import { decideTurn, decideAction } from './decide';
-import { HEAVY_STRIKE_COST, COWARD_FLEE_BP, COWARD_FLEE_MOVE_BONUS } from '../shared/config';
+import { HEAVY_STRIKE_COST, COWARD_FLEE_BP, COWARD_FLEE_MOVE_BONUS, STUPID_MISFIRE_BP, LUCKY_FOOL_BP } from '../shared/config';
 
 const MAX_TICKS = 100_000; // safety cap against stalemates
 
@@ -98,36 +98,72 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
     // In position: cast Heavy Strike if able, else a basic attack.
     if (inAttackPosition(actor, target)) {
       const aEff = effectiveDerived(actor, ctx);
-      const tEff = effectiveDerived(target, ctx);
       const channel = aEff.channel;
-      const def = channel === 'physical' ? tEff.physDef : tEff.magicResist;
       const action = decideAction(actor, target, ctx);
+
+      // ---- RNG action hooks (Task 4) ----
+      // Fixed draw order: Lucky Fool gate [→ retarget index] → Stupid gate [→ misfire OR hit → crit]
+      // Both gates draw only for units carrying the relevant trait.
+      // Only basic attacks are subject to Stupid; Lucky Fool fires for single-target actions
+      // (basic or cast — at this task the only cast is heavyStrike, a single-target skill).
+      let actualTarget = target;
+
+      // Lucky Fool: retarget among in-position enemies (chebyshev ≤ attackRange AND LoS).
+      // Applies to all single-target actions (basic and cast). At this task the only cast is
+      // heavyStrike (single-target). Task 5 will add `&& actor.skill !== 'cleave'` for AoE.
+      if (actor.traits.includes('luckyFool')) {
+        if (rng.intInRange(0, 9999) < LUCKY_FOOL_BP) {
+          // Build deterministic in-position enemy list: chebyshev asc → id asc.
+          const inPos = units
+            .filter((x) => x.hp > 0 && x.side !== actor.side && inAttackPosition(actor, x))
+            .sort((p, q) => chebyshev(actor.pos, p.pos) - chebyshev(actor.pos, q.pos) || (p.id < q.id ? -1 : 1));
+          if (inPos.length > 0) {
+            actualTarget = inPos[rng.intInRange(0, inPos.length - 1)]!;
+          }
+        }
+      }
+
+      // Stupid: on a basic attack only. Misfire consumes exactly one draw; no further rolls.
+      if (action === 'basic' && actor.traits.includes('stupid')) {
+        if (rng.intInRange(0, 9999) < STUPID_MISFIRE_BP) {
+          events.push({ t: 'misfire', id: actor.id, target: actualTarget.id });
+          // Wasted action: no damage, no mana, no hit/crit draw.
+          continue; // eslint-disable-line no-continue
+        }
+        // Fall through to normal basic-attack resolution below.
+      }
+      // ---- end RNG action hooks ----
+
+      // Recompute def against actualTarget (may differ after Lucky Fool retarget).
+      const tEffActual = effectiveDerived(actualTarget, ctx);
+      const defActual = channel === 'physical' ? tEffActual.physDef : tEffActual.magicResist;
+
       if (action === 'cast') {
         // Cast: spend Mana, guaranteed hit, amplified damage, then the normal crit roll.
         actor.mana -= HEAVY_STRIKE_COST;
-        let damage = heavyStrikeDamage(aEff.atk, def);
+        let damage = heavyStrikeDamage(aEff.atk, defActual);
         const crit = rng.intInRange(0, 9999) < actor.derived.critChanceBp;
         if (crit) damage = applyCrit(damage, actor.derived.critMultX100);
-        target.hp -= damage;
-        addMana(target, manaGainOnTaken(damage, tEff.maxHp, target.derived.manaChargeBp));
-        const lethal = target.hp <= 0;
-        events.push({ t: 'attack', id: actor.id, target: target.id, damage, crit, channel, lethal, skill: 'heavyStrike' });
-        if (lethal) { target.hp = 0; events.push({ t: 'death', id: target.id }); actor.kills++; }
+        actualTarget.hp -= damage;
+        addMana(actualTarget, manaGainOnTaken(damage, tEffActual.maxHp, actualTarget.derived.manaChargeBp));
+        const lethal = actualTarget.hp <= 0;
+        events.push({ t: 'attack', id: actor.id, target: actualTarget.id, damage, crit, channel, lethal, skill: 'heavyStrike' });
+        if (lethal) { actualTarget.hp = 0; events.push({ t: 'death', id: actualTarget.id }); actor.kills++; }
       } else {
         // Basic attack: hit roll -> mitigation -> crit roll (unchanged from Plan 4).
-        const chance = hitBp(actor.derived.accuracyBp, target.derived.evasionBp);
+        const chance = hitBp(actor.derived.accuracyBp, actualTarget.derived.evasionBp);
         if (rng.intInRange(0, 9999) >= chance) {
-          events.push({ t: 'miss', id: actor.id, target: target.id });
+          events.push({ t: 'miss', id: actor.id, target: actualTarget.id });
         } else {
-          let damage = mitigatedDamage(aEff.atk, def);
+          let damage = mitigatedDamage(aEff.atk, defActual);
           const crit = rng.intInRange(0, 9999) < actor.derived.critChanceBp;
           if (crit) damage = applyCrit(damage, actor.derived.critMultX100);
-          target.hp -= damage;
+          actualTarget.hp -= damage;
           addMana(actor, manaGainOnHit(actor.derived.manaChargeBp));
-          addMana(target, manaGainOnTaken(damage, tEff.maxHp, target.derived.manaChargeBp));
-          const lethal = target.hp <= 0;
-          events.push({ t: 'attack', id: actor.id, target: target.id, damage, crit, channel, lethal });
-          if (lethal) { target.hp = 0; events.push({ t: 'death', id: target.id }); actor.kills++; }
+          addMana(actualTarget, manaGainOnTaken(damage, tEffActual.maxHp, actualTarget.derived.manaChargeBp));
+          const lethal = actualTarget.hp <= 0;
+          events.push({ t: 'attack', id: actor.id, target: actualTarget.id, damage, crit, channel, lethal });
+          if (lethal) { actualTarget.hp = 0; events.push({ t: 'death', id: actualTarget.id }); actor.kills++; }
         }
       }
     }

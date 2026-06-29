@@ -64,6 +64,7 @@ export type FightEvent =
   | { t: 'move'; id: string; from: Cell; to: Cell }
   | { t: 'attack'; id: string; target: string; damage: number; crit: boolean; channel: DamageChannel; lethal: boolean; skill?: SkillId }
   | { t: 'miss'; id: string; target: string }
+  | { t: 'misfire'; id: string; target: string }
   | { t: 'death'; id: string }
   | { t: 'end'; winner: Side | 'draw'; ticks: number; endReason: EndReason };
 

@@ -48,3 +48,6 @@ export const LOYAL_FAR_BP = 1500;
 export const COWARD_FLEE_BP = 3000;        // flee at <= 30% HP
 export const COWARD_FLEE_MOVE_BONUS = 1;   // +moveRange while fleeing
 export const RALLY_TICKS = 200;            // time-valve: rally (permanently) after this long fleeing
+// RNG action hooks (Plan 6, Task 4):
+export const STUPID_MISFIRE_BP = 1000;     // 10% basic-attack misfire
+export const LUCKY_FOOL_BP = 500;          // 5% retarget to reachable foe
