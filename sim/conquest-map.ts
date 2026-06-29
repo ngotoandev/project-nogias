@@ -171,7 +171,7 @@ export function advance(state: MapState, commands: MapCommand[]): MapState {
   }
 
   // Travel phase: only armies that were already travelling/retreating BEFORE this tick's commands.
-  for (const army of state.armies.slice().sort((a, b) => (a.id < b.id ? -1 : 1))) {
+  for (const army of state.armies.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
     if (!travellingBefore.has(army.id)) continue;
     army.travelGauge += slowestTempo(army);
     while (army.travelGauge >= TRAVEL_THRESHOLD && army.route && army.route.length > 0) {

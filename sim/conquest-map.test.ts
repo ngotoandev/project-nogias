@@ -330,8 +330,10 @@ it('arriving at a DEFENDED tile becomes contested (no resolution, slot held, con
   expect(a().state).toBe('contested');
   // Owner still enemy (no capture)
   expect(s.tiles.find(t => t.id === 't2')!.owner).toBe('enemy');
-  // contested event fired
-  expect(s.events.some(e => e.t === 'contested' && e.tile === 't2')).toBe(true);
+  // contested event fired with sorted attackers list
+  const contestedEvent = s.events.find(e => e.t === 'contested' && e.tile === 't2');
+  expect(contestedEvent).toBeDefined();
+  expect((contestedEvent as any).attackers).toEqual(['a1']);
   // Slot still held: committedCount = 1 (army keeps target)
   expect(a().target).toBe('t2');
   expect(committedCount(s, 't2')).toBe(1);
