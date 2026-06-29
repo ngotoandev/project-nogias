@@ -114,6 +114,38 @@ describe('runTileFight', () => {
     // Same attacker + seed -> identical hit/crit rolls; only magicResist differs.
     expect(firstDamage(1)).toBeGreaterThan(firstDamage(9));
   });
+
+  it('a ranged unit attacks from range without closing to melee', () => {
+    const setup: FightSetup = {
+      grid: { width: 5, height: 1, blocked: [] },
+      units: [
+        { id: 'r', side: 'A', attrs: { str: 1, agi: 5, int: 9, lck: 1 }, attackKind: 'ranged', priority: 5, pos: { x: 0, y: 0 } },
+        { id: 't', side: 'B', attrs: { str: 5, agi: 1, int: 1, lck: 1 }, attackKind: 'melee', priority: 0, pos: { x: 3, y: 0 } },
+      ],
+    };
+    const r = runTileFight(setup, 5);
+    // INT 9 vs min-evasion target -> hitBp caps at 10000 (first action lands);
+    // chebyshev 3 <= ranged range 4 with clear LoS -> it shoots from (0,0), no move.
+    const firstByR = r.events.find((e) => (e.t === 'attack' || e.t === 'move' || e.t === 'miss') && e.id === 'r');
+    expect(firstByR?.t).toBe('attack');
+    expect(r.events.some((e) => e.t === 'move' && e.id === 'r')).toBe(false);
+  });
+
+  it('a wall on the line blocks the ranged shot until the unit repositions', () => {
+    const mk = (withWall: boolean): FightSetup => ({
+      grid: { width: 5, height: 1, blocked: withWall ? [{ x: 2, y: 0 }] : [] },
+      units: [
+        { id: 'r', side: 'A', attrs: { str: 1, agi: 5, int: 9, lck: 1 }, attackKind: 'ranged', priority: 5, pos: { x: 0, y: 0 } },
+        { id: 't', side: 'B', attrs: { str: 5, agi: 1, int: 1, lck: 1 }, attackKind: 'melee', priority: 0, pos: { x: 4, y: 0 } },
+      ],
+    });
+    const firstActByR = (s: FightSetup) => {
+      const r = runTileFight(s, 5);
+      return r.events.find((e) => (e.t === 'attack' || e.t === 'move' || e.t === 'miss') && e.id === 'r')?.t;
+    };
+    expect(firstActByR(mk(false))).toBe('attack'); // clear LoS at range 4 -> shoots from start
+    expect(firstActByR(mk(true))).toBe('move');    // wall at (2,0) breaks LoS -> must move first
+  });
 });
 
 describe('runTileFight golden hash', () => {

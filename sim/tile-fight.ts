@@ -1,7 +1,7 @@
 import type { Cell, EndReason, FightEvent, FightResult, FightSetup, Side, Unit } from '../shared/types';
 import { makeRng } from '../shared/rng';
 import { deriveStats } from './stats';
-import { makeGrid, chebyshev, stepToward } from './grid';
+import { makeGrid, chebyshev, stepToward, hasLineOfSight } from './grid';
 import { nextActor, TEMPO_THRESHOLD } from './initiative';
 import { hashFight } from './hash';
 import { hitBp, mitigatedDamage, applyCrit } from './combat';
@@ -33,6 +33,10 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
   const occupied = (c: Cell, selfId: string): boolean =>
     units.some((u) => u.hp > 0 && u.id !== selfId && u.pos.x === c.x && u.pos.y === c.y);
 
+  const inAttackPosition = (actor: Unit, target: Unit): boolean =>
+    chebyshev(actor.pos, target.pos) <= actor.derived.attackRange &&
+    hasLineOfSight(actor.pos, target.pos, (c) => grid.isBlocked(c));
+
   const sidesAlive = (): { a: boolean; b: boolean } => ({
     a: units.some((u) => u.hp > 0 && u.side === 'A'),
     b: units.some((u) => u.hp > 0 && u.side === 'B'),
@@ -56,7 +60,7 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
 
     // Move up to moveRange steps toward the target, stopping once in range.
     for (let step = 0; step < actor.derived.moveRange; step++) {
-      if (chebyshev(actor.pos, target.pos) <= actor.derived.attackRange) break;
+      if (inAttackPosition(actor, target)) break;
       const canEnter = (c: Cell): boolean =>
         grid.inBounds(c) && !grid.isBlocked(c) && !occupied(c, actor.id);
       const next = stepToward(actor.pos, target.pos, canEnter);
@@ -66,7 +70,7 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
     }
 
     // Attack if in range: hit roll -> channel mitigation -> crit roll.
-    if (chebyshev(actor.pos, target.pos) <= actor.derived.attackRange) {
+    if (inAttackPosition(actor, target)) {
       const chance = hitBp(actor.derived.accuracyBp, target.derived.evasionBp);
       if (rng.intInRange(0, 9999) >= chance) {
         events.push({ t: 'miss', id: actor.id, target: target.id });
