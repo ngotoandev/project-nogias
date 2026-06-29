@@ -373,7 +373,7 @@ describe('deriveStats', () => {
     expect(d.channel).toBe('physical');
     expect(d.accuracyBp).toBe(10519);
     expect(d.evasionBp).toBe(2061);
-    expect(d.critChanceBp).toBe(1560);
+    expect(d.critChanceBp).toBe(1558);
     expect(d.critMultX100).toBe(150);
   });
 
@@ -383,7 +383,7 @@ describe('deriveStats', () => {
     expect(d.channel).toBe('magic');
     expect(d.magicResist).toBe(9);
     expect(d.accuracyBp).toBe(10900);
-    expect(d.critChanceBp).toBe(2010);
+    expect(d.critChanceBp).toBe(2012);
     expect(d.critMultX100).toBe(158);
   });
 
