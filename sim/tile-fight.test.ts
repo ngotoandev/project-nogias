@@ -549,19 +549,16 @@ describe('orderRetreat', () => {
     const unitA = state.units.find((u) => u.id === 'a');
     expect(unitA?.exited).toBe(true);
 
-    // If the fight hasn't ended naturally, force check fightResult
-    if (!state.outcome) {
-      // finalize manually is not exposed; just check unit state
-    }
+    // The fight MUST have concluded: once 'a' exits, only side B remains alive,
+    // so sidesAlive === 1 and the engine sets state.outcome. If this fails,
+    // the retreat logic is broken and the test must not silently pass.
+    expect(state.outcome).toBeTruthy();
 
-    // If the fight ended (b alone = B wins, or a exited and b alive = ?)
     // fightResult should show 'a' in survivors with retreated:true
-    if (state.outcome) {
-      const result = fightResult(state);
-      const survivor = result.survivors.find((s) => s.id === 'a');
-      expect(survivor).toBeDefined();
-      expect(survivor?.retreated).toBe(true);
-    }
+    const result = fightResult(state);
+    const survivor = result.survivors.find((s) => s.id === 'a');
+    expect(survivor).toBeDefined();
+    expect(survivor?.retreated).toBe(true);
   });
 
   it('a retreating unit is hittable en route (enemies can damage it before it exits)', () => {
