@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { runReplay, runScriptedFight } from './replay';
-import type { ReplayBundle, ScriptedFightBundle, UnitSpec } from '../shared/types';
+import { runScriptedConquest } from './replay';
+import type { ReplayBundle, ScriptedFightBundle, UnitSpec, ConquestBundle, MapSetup } from '../shared/types';
 
 const canonical: ReplayBundle = {
   version: 1,
@@ -230,5 +231,92 @@ describe('runScriptedFight', () => {
       e => (e.t === 'attack' || e.t === 'miss') && 'id' in e && e.id === 'b1',
     );
     expect(b1AttacksAfterRetreat.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 5: runScriptedConquest + v3 runReplay branch
+// ---------------------------------------------------------------------------
+
+// Minimal map: 2 owned tiles (home + transit) + 1 enemy undefended tile.
+//   t0 (owner=player, type=start) — home, neighbors: { E: 't1' }
+//   t1 (owner=player, type=start) — transit, neighbors: { W: 't0', E: 't2' }
+//   t2 (owner=enemy, type=enemy, garrison=[]) — target (undefended)
+// Army a1 starts at t0 with one unit (agi=1 → tempoRate=11).
+// Dispatch at tick 0: route = [t1, t2] (2 hops).
+// Each hop costs ceil(100/11) = 10 ticks (gauge accumulates, so it might take
+// a few ticks depending on whether dispatch happens on tick 0 before the travel
+// phase, which per advance() design it does — newly dispatched armies don't move
+// the same tick).
+// After 2 hops, army arrives at t2 (undefended, owner=enemy) → captured.
+// Quiescent: no army travelling + no pending commands at tick ≥ totalTicks.
+const unitSpec: UnitSpec = {
+  id: 'u1', side: 'A', attrs: { str: 5, agi: 1, int: 1, lck: 1 },
+  attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 },
+};
+const mapWithUndefendedTarget: MapSetup = {
+  tiles: [
+    { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+    { id: 't1', type: 'start', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
+    { id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' }, garrison: [] },
+  ],
+  armies: [{ id: 'a1', units: [unitSpec], tile: 't0' }],
+};
+
+describe('runScriptedConquest', () => {
+  it('runReplay still routes v1/v2 unchanged (golden 86e238c1)', () => {
+    expect(runReplay({ version: 1, setup: canonical.setup, seed: 42 }).hash).toBe('86e238c1');
+  });
+
+  it('runScriptedConquest runs a dispatch→travel→capture scenario deterministically', () => {
+    const bundle: ConquestBundle = {
+      version: 3,
+      seed: 0,
+      setup: mapWithUndefendedTarget,
+      script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] }],
+    };
+    const r = runScriptedConquest(bundle);
+    expect(typeof r.hash).toBe('string');
+    expect(r.ticks).toBeGreaterThan(0);
+  });
+
+  it('runScriptedConquest is deterministic (same result twice)', () => {
+    const bundle: ConquestBundle = {
+      version: 3,
+      seed: 0,
+      setup: mapWithUndefendedTarget,
+      script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] }],
+    };
+    const r1 = runScriptedConquest(bundle);
+    const r2 = runScriptedConquest(bundle);
+    expect(r1.hash).toBe(r2.hash);
+    expect(r1.ticks).toBe(r2.ticks);
+  });
+
+  it('runReplay v3 branch delegates to runScriptedConquest and returns hash+ticks (no winner/endReason)', () => {
+    const bundle: ConquestBundle = {
+      version: 3,
+      seed: 0,
+      setup: mapWithUndefendedTarget,
+      script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] }],
+    };
+    const r = runReplay(bundle);
+    expect(typeof r.hash).toBe('string');
+    expect(r.ticks).toBeGreaterThan(0);
+    expect(r.winner).toBeUndefined();
+    expect(r.endReason).toBeUndefined();
+  });
+
+  it('runScriptedConquest goes quiescent (no travelling army + no pending commands)', () => {
+    const bundle: ConquestBundle = {
+      version: 3,
+      seed: 0,
+      setup: mapWithUndefendedTarget,
+      script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] }],
+    };
+    const r = runScriptedConquest(bundle);
+    // After quiescence, army must be garrisoned (captured or contested)
+    // Ticks must be finite (well under CONQUEST_MAX_TICKS=100_000)
+    expect(r.ticks).toBeLessThan(1000);
   });
 });

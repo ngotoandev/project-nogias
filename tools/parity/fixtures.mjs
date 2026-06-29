@@ -197,4 +197,59 @@ export const FIXTURES = [
       ],
     },
   },
+  {
+    // conquest-capture-seed0: army a1 dispatches from owned t0 across transit t1 to undefended
+    // enemy tile t2 (no garrison). After 2 hops army arrives, t2 owner flips to 'player'.
+    // Quiescent once garrisoned. Proves version-3 runReplay, capture path, and V8===goja parity.
+    name: 'conquest-capture-seed0',
+    expectedHash: '503f1a30',
+    bundle: {
+      version: 3,
+      seed: 0,
+      setup: {
+        tiles: [
+          { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+          { id: 't1', type: 'start', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
+          { id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' }, garrison: [] },
+        ],
+        armies: [
+          { id: 'a1', units: [
+            { id: 'u1', side: 'A', attrs: { str: 5, agi: 1, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
+          ], tile: 't0' },
+        ],
+      },
+      script: [
+        { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] },
+      ],
+    },
+  },
+  {
+    // conquest-contested-seed0: army a1 dispatches from owned t0 across transit t1 to defended
+    // enemy tile t2 (has a garrison unit). After 2 hops army arrives, engagement is contested
+    // (unresolved — Plan 3 handles fights). Quiescent once contested.
+    // Proves version-3 runReplay, contested seam path, and V8===goja parity.
+    name: 'conquest-contested-seed0',
+    expectedHash: 'f6abc10b',
+    bundle: {
+      version: 3,
+      seed: 0,
+      setup: {
+        tiles: [
+          { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+          { id: 't1', type: 'start', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
+          { id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' }, garrison: [
+            { id: 'e1', side: 'B', attrs: { str: 5, agi: 1, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
+          ] },
+        ],
+        armies: [
+          { id: 'a1', units: [
+            { id: 'u1', side: 'A', attrs: { str: 5, agi: 1, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
+          ], tile: 't0' },
+        ],
+      },
+      script: [
+        { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] },
+      ],
+    },
+  },
 ];
