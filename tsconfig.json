@@ -9,5 +9,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["shared", "sim"]
+  "include": ["shared", "sim"],
+  "exclude": ["**/*.test.ts"]
 }
