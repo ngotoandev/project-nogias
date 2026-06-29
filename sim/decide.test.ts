@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { makeGrid, chebyshev } from './grid';
 import { deriveStats } from './stats';
-import { chooseTarget, decideTurn, decideAction, cleaveTargets, castCondition } from './decide';
-import type { Unit } from '../shared/types';
+import { chooseTarget, decideTurn, decideAction, cleaveTargets, castCondition, effectiveValveTicks } from './decide';
+import type { Unit, Temperament } from '../shared/types';
 import type { AttackKind, SkillId } from '../shared/types';
-import { RALLY_TICKS, LEADER_RADIUS, CLEAVE_COST, CLEAVE_MIN_TARGETS, VALVE_TICKS } from '../shared/config';
+import { RALLY_TICKS, LEADER_RADIUS, CLEAVE_COST, CLEAVE_MIN_TARGETS, VALVE_TICKS, LEAN_VALVE_DELTA } from '../shared/config';
 
 function u(id: string, side: 'A' | 'B', x: number, y: number, opts: Partial<Unit> = {}): Unit {
   const attrs = opts.attrs ?? { str: 5, agi: 5, int: 1, lck: 1 };
@@ -12,7 +12,8 @@ function u(id: string, side: 'A' | 'B', x: number, y: number, opts: Partial<Unit
   const derived = deriveStats(attrs, kind);
   return { id, side, attrs, priority: opts.priority ?? 5, pos: { x, y }, hp: opts.hp ?? derived.maxHp,
     derived, gauge: 0, mana: opts.mana ?? 0, skill: opts.skill,
-    traits: opts.traits ?? [], kills: opts.kills ?? 0, stallSinceTick: -1, fleeingSinceTick: -1 };
+    traits: opts.traits ?? [], kills: opts.kills ?? 0, stallSinceTick: -1, fleeingSinceTick: -1,
+    temperament: opts.temperament };
 }
 
 const ctx = (units: Unit[], totalTicks = 0) => ({ totalTicks, units, grid: makeGrid({ width: 8, height: 8, blocked: [] }) });
@@ -188,5 +189,115 @@ describe('decideAction (cleave + valve)', () => {
     actor.stallSinceTick = 0;
     const e1 = u('e1', 'B', 4, 5);
     expect(decideAction(actor, e1, ctx([actor, e1], VALVE_TICKS - 1))).toBe('basic');
+  });
+});
+
+describe('chooseTarget (personality tie-break)', () => {
+  // Setup: actor at (5,0), two enemies at equal chebyshev distance=5, equal priority.
+  // Enemy e_low has str=3 (lower atk, lower hp); e_high has str=9 (higher atk, higher hp).
+  // Without temperament → id asc: 'e_high' < 'e_low' picks e_high.
+
+  function makeActor(temperament?: Temperament): Unit {
+    return u('actor', 'A', 5, 0, { temperament });
+  }
+
+  // e_low: str=3 → low hp and low atk; e_high: str=9 → high hp and high atk
+  // Both at chebyshev=5 from actor, equal priority=5.
+  // id ordering: 'e_high' < 'e_low' (alphabetically)
+  const eHigh = u('e_high', 'B', 0, 0, { attrs: { str: 9, agi: 5, int: 1, lck: 1 }, priority: 5 });
+  const eLow  = u('e_low',  'B', 5, 5, { attrs: { str: 3, agi: 5, int: 1, lck: 1 }, priority: 5 });
+
+  it('no temperament → id asc (e_high before e_low)', () => {
+    const actor = makeActor(undefined);
+    const target = chooseTarget(actor, [actor, eHigh, eLow]);
+    expect(target?.id).toBe('e_high'); // id 'e_high' < 'e_low'
+  });
+
+  it('stoic → id asc (neutral, same as no-temperament)', () => {
+    const actor = makeActor('stoic');
+    const target = chooseTarget(actor, [actor, eHigh, eLow]);
+    expect(target?.id).toBe('e_high');
+  });
+
+  it('hotheaded → picks lower-HP enemy (go for the kill) → e_low', () => {
+    // e_low has str=3 → lower HP; hotheaded sorts by hp asc → e_low first
+    const actor = makeActor('hotheaded');
+    const target = chooseTarget(actor, [actor, eHigh, eLow]);
+    expect(target?.id).toBe('e_low');
+  });
+
+  it('brave → picks higher-atk enemy (most dangerous first) → e_high', () => {
+    // e_high has str=9 → higher base atk; brave sorts by -atk asc (highest atk first) → e_high first
+    // (e_high would also be picked by id-asc, so we verify the lean key works in the right direction
+    //  by constructing: brave should still pick e_high even if id ordering would be reversed)
+    // Constructing with ids where id-asc would prefer e_low but brave prefers e_high:
+    const eHighBrave = u('z_high', 'B', 0, 0, { attrs: { str: 9, agi: 5, int: 1, lck: 1 }, priority: 5 });
+    const eLowBrave  = u('a_low',  'B', 5, 5, { attrs: { str: 3, agi: 5, int: 1, lck: 1 }, priority: 5 });
+    // Without temperament → id asc: 'a_low' < 'z_high' → picks a_low
+    const actorNone = makeActor(undefined);
+    expect(chooseTarget(actorNone, [actorNone, eHighBrave, eLowBrave])?.id).toBe('a_low');
+    // With brave: should pick z_high (higher atk)
+    const actorBrave = makeActor('brave');
+    expect(chooseTarget(actorBrave, [actorBrave, eHighBrave, eLowBrave])?.id).toBe('z_high');
+  });
+
+  it('cautious → picks lower-atk enemy (least dangerous first) → e_low', () => {
+    // e_low has str=3 → lower base atk; cautious sorts by atk asc → e_low first
+    // Constructing with ids where id-asc would prefer e_high but cautious prefers e_low:
+    const eHighCaut = u('a_high', 'B', 0, 0, { attrs: { str: 9, agi: 5, int: 1, lck: 1 }, priority: 5 });
+    const eLowCaut  = u('z_low',  'B', 5, 5, { attrs: { str: 3, agi: 5, int: 1, lck: 1 }, priority: 5 });
+    // Without temperament → id asc: 'a_high' < 'z_low' → picks a_high
+    const actorNone = makeActor(undefined);
+    expect(chooseTarget(actorNone, [actorNone, eHighCaut, eLowCaut])?.id).toBe('a_high');
+    // With cautious: should pick z_low (lower atk)
+    const actorCaut = makeActor('cautious');
+    expect(chooseTarget(actorCaut, [actorCaut, eHighCaut, eLowCaut])?.id).toBe('z_low');
+  });
+
+  it('temperament does NOT affect non-tied case (different distances)', () => {
+    // e_near is closer, e_far is farther — temperament must not override distance ordering
+    const near = u('e_near', 'B', 6, 0, { attrs: { str: 9, agi: 5, int: 1, lck: 1 }, priority: 5 }); // chebyshev=1
+    const far  = u('e_far',  'B', 0, 0, { attrs: { str: 3, agi: 5, int: 1, lck: 1 }, priority: 5 }); // chebyshev=5
+    // hotheaded would prefer lower hp (e_far has lower atk/hp) but distance must win
+    const actor = makeActor('hotheaded');
+    expect(chooseTarget(actor, [actor, near, far])?.id).toBe('e_near');
+  });
+
+  it('Headstrong bypasses chooseTarget and ignores temperament (uses nearestEnemy path)', () => {
+    // headstrong unit: has trait headstrong + temperament hotheaded
+    // low-hp enemy is farther → headstrong must pick nearest (pure distance), not hotheaded's preference
+    const hactor = u('h', 'A', 0, 0, { traits: ['headstrong'], temperament: 'hotheaded' });
+    const near = u('near', 'B', 2, 0, { attrs: { str: 9, agi: 5, int: 1, lck: 1 }, priority: 5 });
+    const far  = u('far',  'B', 7, 0, { attrs: { str: 1, agi: 5, int: 1, lck: 1 }, priority: 5 }); // lower hp
+    const intent = decideTurn(hactor, { totalTicks: 0, units: [hactor, near, far], grid });
+    expect(intent.targetId).toBe('near'); // nearest wins, not lowest-hp
+    expect(intent.charge).toBe(true);
+  });
+});
+
+describe('effectiveValveTicks (personality lean)', () => {
+  it('no temperament → VALVE_TICKS', () => {
+    const actor = u('a', 'A', 0, 0);
+    expect(effectiveValveTicks(actor)).toBe(VALVE_TICKS);
+  });
+
+  it('stoic → VALVE_TICKS (neutral)', () => {
+    const actor = u('a', 'A', 0, 0, { temperament: 'stoic' as Temperament });
+    expect(effectiveValveTicks(actor)).toBe(VALVE_TICKS);
+  });
+
+  it('brave → VALVE_TICKS (neutral)', () => {
+    const actor = u('a', 'A', 0, 0, { temperament: 'brave' as Temperament });
+    expect(effectiveValveTicks(actor)).toBe(VALVE_TICKS);
+  });
+
+  it('hotheaded → VALVE_TICKS - LEAN_VALVE_DELTA (fires sooner)', () => {
+    const actor = u('a', 'A', 0, 0, { temperament: 'hotheaded' as Temperament });
+    expect(effectiveValveTicks(actor)).toBe(VALVE_TICKS - LEAN_VALVE_DELTA);
+  });
+
+  it('cautious → VALVE_TICKS + LEAN_VALVE_DELTA (fires later)', () => {
+    const actor = u('a', 'A', 0, 0, { temperament: 'cautious' as Temperament });
+    expect(effectiveValveTicks(actor)).toBe(VALVE_TICKS + LEAN_VALVE_DELTA);
   });
 });

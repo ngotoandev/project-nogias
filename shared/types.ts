@@ -4,6 +4,7 @@ export type DamageChannel = 'physical' | 'magic';
 export type SkillId = 'heavyStrike' | 'cleave';
 export type TraitId = 'reckless' | 'slowStarter' | 'bloodthirsty' | 'loyal'
   | 'coward' | 'headstrong' | 'stupid' | 'luckyFool';
+export type Temperament = 'brave' | 'cautious' | 'hotheaded' | 'stoic';
 
 export interface Cell { x: number; y: number; }
 
@@ -35,6 +36,7 @@ export interface UnitSpec {
   traits?: TraitId[];
   priority: number;    // higher = more forward + more aggro
   pos: Cell;
+  personality?: { temperament: Temperament };
 }
 
 export interface Unit {
@@ -52,6 +54,7 @@ export interface Unit {
   kills: number;
   stallSinceTick: number;
   fleeingSinceTick: number;
+  temperament?: Temperament;
 }
 
 export interface GridSpec { width: number; height: number; blocked: Cell[]; }

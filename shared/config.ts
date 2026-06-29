@@ -57,3 +57,5 @@ export const RALLY_TICKS = 200;            // time-valve: rally (permanently) af
 // RNG action hooks (Plan 6, Task 4):
 export const STUPID_MISFIRE_BP = 1000;     // 10% basic-attack misfire
 export const LUCKY_FOOL_BP = 500;          // 5% retarget to reachable foe
+// Personality lean (Plan 6, Task 6):
+export const LEAN_VALVE_DELTA = 60;        // hotheaded: VALVE_TICKS−DELTA, cautious: VALVE_TICKS+DELTA

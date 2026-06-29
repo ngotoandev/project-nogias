@@ -1,15 +1,16 @@
 // Replay parity fixtures. expectedHash is each fixture's V8 golden; the parity
 // harness requires goja to reproduce every one exactly. Current set:
-//   canonical-baseSetup-seed42  (86e238c1) — all-melee two-channel combat
-//   ranged-wall-seed42          (1123ceff) — ranged range + terrain line-of-sight
-//   skill-cast-seed11           (b621e99d) — ranged+heavyStrike Mana charge + cast vs tanky/weak target
-//   reckless-duel-seed7         (c28a905a) — reckless melee unit vs plain unit; atk ramps as damaged
-//   coward-kite-seed3           (43d92801) — coward melee kites away when low-HP; rally valve
-//   headstrong-charge-seed3     (db26f7c9) — headstrong ranged charges to melee instead of kiting
-//   stupid-misfire-seed80       (e7eaf7bb) — stupid melee unit misfires basic attack (seed=80 fires 10% gate)
-//   luckyfool-retarget-seed173  (068a1267) — luckyFool retargets to b2 (seed=173 fires 5% gate, idx=1)
-//   cleave-cluster-seed5        (57f7a0ff) — melee cleave unit reaches 2 adjacent enemies; casts Cleave hitting ≥2
-//   cleave-valve-seed7          (b028690d) — melee cleave unit vs lone tanky enemy; valve force-casts after VALVE_TICKS
+//   canonical-baseSetup-seed42       (86e238c1) — all-melee two-channel combat
+//   ranged-wall-seed42               (1123ceff) — ranged range + terrain line-of-sight
+//   skill-cast-seed11                (b621e99d) — ranged+heavyStrike Mana charge + cast vs tanky/weak target
+//   reckless-duel-seed7              (c28a905a) — reckless melee unit vs plain unit; atk ramps as damaged
+//   coward-kite-seed3                (43d92801) — coward melee kites away when low-HP; rally valve
+//   headstrong-charge-seed3          (db26f7c9) — headstrong ranged charges to melee instead of kiting
+//   stupid-misfire-seed80            (e7eaf7bb) — stupid melee unit misfires basic attack (seed=80 fires 10% gate)
+//   luckyfool-retarget-seed173       (068a1267) — luckyFool retargets to b2 (seed=173 fires 5% gate, idx=1)
+//   cleave-cluster-seed5             (57f7a0ff) — melee cleave unit reaches 2 adjacent enemies; casts Cleave hitting ≥2
+//   cleave-valve-seed7               (b028690d) — melee cleave unit vs lone tanky enemy; valve force-casts after VALVE_TICKS
+//   personality-tiebreak-seed1       (8d2831ec) — hotheaded lean: actor equidistant from a_tanky (str=10) + z_glass (str=4); picks z_glass (lower HP)
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {
@@ -132,5 +133,20 @@ export const FIXTURES = [
       grid: { width: 2, height: 1, blocked: [] }, units: [
       { id: 'cl', side: 'A', attackKind: 'melee', skill: 'cleave', attrs: { str: 20, agi: 9, int: 9, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
       { id: 'tg', side: 'B', attackKind: 'magic', attrs: { str: 100, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 1, y: 0 } } ] } },
+  },
+  {
+    // seed=1: hotheaded actor 'a' at (2,0), equidistant (chebyshev=2) from:
+    //   'a_tanky' at (0,0): str=10 → hp=70, base atk=27 (high HP, high atk)
+    //   'z_glass' at (4,0): str=4  → hp=40, base atk=15 (low HP, low atk)
+    // Equal priority=5. Id-asc tiebreak alone would pick 'a_tanky' ('a' < 'z').
+    // Hotheaded lean key = enemy.hp → picks z_glass (hp=40 < a_tanky hp=70).
+    // Control (no personality): hash=5f0f09ce; this hash=8d2831ec — different outcomes confirmed.
+    name: 'personality-tiebreak-seed1',
+    expectedHash: '8d2831ec',
+    bundle: { version: 1, seed: 1, setup: {
+      grid: { width: 5, height: 1, blocked: [] }, units: [
+      { id: 'a', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 2, y: 0 }, personality: { temperament: 'hotheaded' } },
+      { id: 'z_glass', side: 'B', attackKind: 'melee', attrs: { str: 4, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 4, y: 0 } },
+      { id: 'a_tanky', side: 'B', attackKind: 'melee', attrs: { str: 10, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } } ] } },
   },
 ];

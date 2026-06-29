@@ -1,21 +1,32 @@
-import type { Unit, TraitId } from '../shared/types';
+import type { Unit, TraitId, Temperament } from '../shared/types';
 import type { Grid } from './grid';
 import { chebyshev, hasLineOfSight } from './grid';
-import { COWARD_FLEE_BP, RALLY_TICKS, LEADER_RADIUS, SKILL_COST, CLEAVE_RADIUS, CLEAVE_MIN_TARGETS, VALVE_TICKS } from '../shared/config';
+import { COWARD_FLEE_BP, RALLY_TICKS, LEADER_RADIUS, SKILL_COST, CLEAVE_RADIUS, CLEAVE_MIN_TARGETS, VALVE_TICKS, LEAN_VALVE_DELTA } from '../shared/config';
 
 export type MoveMode = 'engage' | 'flee';
 export type ActionKind = 'cast' | 'basic' | 'none';
 export interface FightCtx { totalTicks: number; units: Unit[]; grid: Grid; }
 export interface TurnIntent { targetId: string | null; move: MoveMode; charge: boolean; }
 
-// Nearest living enemy; tiebreak higher priority, then id asc. (Moved verbatim
-// from tile-fight.ts — this is the baseline "priority/targeting" layer.)
+// Personality lean key: inserted BETWEEN priority desc and id asc tie-breaks.
+// Uses BASE derived.atk only (not effectiveDerived) to keep this a soft lean
+// and avoid circular imports (decide.ts must not import stats.ts).
+function leanKey(t: Temperament | undefined, e: Unit): number {
+  if (t === 'hotheaded') return e.hp;        // go for the kill (asc → lower HP first)
+  if (t === 'brave') return -e.derived.atk;  // most dangerous first (asc → highest atk first)
+  if (t === 'cautious') return e.derived.atk; // least dangerous first (asc → lowest atk first)
+  return 0;                                   // stoic / none → neutral
+}
+
+// Nearest living enemy; tiebreak higher priority, then personality lean, then id asc.
+// (Moved verbatim from tile-fight.ts — this is the baseline "priority/targeting" layer.)
 export function chooseTarget(actor: Unit, units: Unit[]): Unit | null {
   const enemies = units.filter((u) => u.hp > 0 && u.side !== actor.side);
   if (enemies.length === 0) return null;
   enemies.sort((x, y) =>
     chebyshev(actor.pos, x.pos) - chebyshev(actor.pos, y.pos) ||
     y.priority - x.priority ||
+    (leanKey(actor.temperament, x) - leanKey(actor.temperament, y)) ||
     (x.id < y.id ? -1 : 1));
   return enemies[0]!;
 }
@@ -71,8 +82,10 @@ export function castCondition(actor: Unit, _target: Unit, ctx: FightCtx): boolea
 }
 
 // Effective valve threshold (VALVE_TICKS + personality delta from Task 6).
-export function effectiveValveTicks(_actor: Unit): number {
-  return VALVE_TICKS;
+export function effectiveValveTicks(actor: Unit): number {
+  if (actor.temperament === 'hotheaded') return Math.max(0, VALVE_TICKS - LEAN_VALVE_DELTA);
+  if (actor.temperament === 'cautious') return VALVE_TICKS + LEAN_VALVE_DELTA;
+  return VALVE_TICKS; // brave / stoic / none → neutral
 }
 
 export function decideAction(actor: Unit, target: Unit, ctx: FightCtx): 'cast' | 'basic' {

@@ -19,6 +19,7 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
       id: u.id, side: u.side, attrs: { ...u.attrs }, priority: u.priority,
       pos: { x: u.pos.x, y: u.pos.y }, hp: derived.maxHp, derived, gauge: 0, mana: 0, skill: u.skill,
       traits: u.traits ?? [], kills: 0, stallSinceTick: -1, fleeingSinceTick: -1,
+      temperament: u.personality?.temperament,
     };
   });
   const events: FightEvent[] = [];
