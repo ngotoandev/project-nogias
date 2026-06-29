@@ -22,4 +22,6 @@ export const HIT_MAX_BP = 10000;
 // Unchanged from Plan 1:
 export const TEMPO_BASE = 10;
 export const MOVE_RANGE = 3;
-export const ATTACK_RANGE = 1;
+export const MELEE_RANGE = 1;
+export const RANGED_RANGE = 4;
+export const MAGIC_RANGE = 3;

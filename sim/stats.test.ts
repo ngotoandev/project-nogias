@@ -26,6 +26,7 @@ describe('deriveStats', () => {
     expect(d.evasionBp).toBe(2061);
     expect(d.critChanceBp).toBe(1558);
     expect(d.critMultX100).toBe(150);
+    expect(d.attackRange).toBe(4);
   });
 
   it('uses the magic formula on the magic channel', () => {
@@ -36,6 +37,7 @@ describe('deriveStats', () => {
     expect(d.accuracyBp).toBe(10900);
     expect(d.critChanceBp).toBe(2012);
     expect(d.critMultX100).toBe(158);
+    expect(d.attackRange).toBe(3);
   });
 
   it('clamps evasion and crit chance to their caps', () => {

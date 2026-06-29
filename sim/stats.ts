@@ -4,13 +4,19 @@ import {
   HP_BASE, HP_PER_STR, WEAPON_BASE, FOCUS_BASE, ARMOR_BASE, RESIST_BASE,
   SQRT_SCALE, ACC_BASE_BP, ACC_COEF, EVA_COEF, EVA_CAP_BP,
   CRIT_COEF, CRIT_CAP_BP, CRITMULT_BASE_X100, CRITMULT_COEF,
-  TEMPO_BASE, MOVE_RANGE, ATTACK_RANGE,
+  TEMPO_BASE, MOVE_RANGE, MELEE_RANGE, RANGED_RANGE, MAGIC_RANGE,
 } from '../shared/config';
 
 function atkFor(a: Attributes, kind: AttackKind): number {
   if (kind === 'melee') return WEAPON_BASE + a.str * 2 + a.agi;
   if (kind === 'ranged') return WEAPON_BASE + a.agi * 2 + a.str;
   return FOCUS_BASE + a.int * 2 + a.lck; // magic
+}
+
+function rangeFor(kind: AttackKind): number {
+  if (kind === 'melee') return MELEE_RANGE;
+  if (kind === 'ranged') return RANGED_RANGE;
+  return MAGIC_RANGE; // magic
 }
 
 // GDD Part II derived stats, ported to integer / basis-point / fixed-point math.
@@ -28,6 +34,6 @@ export function deriveStats(a: Attributes, attackKind: AttackKind): DerivedStats
     critMultX100: CRITMULT_BASE_X100 + Math.floor((CRITMULT_COEF * sqrtFP(a.lck)) / SQRT_SCALE),
     tempoRate: TEMPO_BASE + a.agi,
     moveRange: MOVE_RANGE,
-    attackRange: ATTACK_RANGE,
+    attackRange: rangeFor(attackKind),
   };
 }
