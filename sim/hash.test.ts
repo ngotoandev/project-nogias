@@ -11,6 +11,23 @@ function unit(id: string, x: number, hp: number): Unit {
   };
 }
 
+describe('fnv1a golden values', () => {
+  it('pins exact hashes (must hold identically in goja — parity anchor)', () => {
+    expect(fnv1a('')).toBe('811c9dc5');
+    expect(fnv1a('a')).toBe('e40c292c');
+    expect(fnv1a('hello')).toBe('4f9f2cab');
+    expect(fnv1a('nogias')).toBe('35e9a4e6');
+    expect(fnv1a('project-nogias')).toBe('d6e652d2');
+  });
+
+  it('zero-pads to 8 hex chars (leading-zero branch pinned)', () => {
+    expect(fnv1a('68')).toBe('0de8d5a3'); // this hash begins with 0
+    for (let i = 0; i < 2000; i++) {
+      expect(fnv1a(String(i))).toMatch(/^[0-9a-f]{8}$/);
+    }
+  });
+});
+
 describe('hash', () => {
   it('fnv1a is stable and 8 hex chars', () => {
     expect(fnv1a('hello')).toBe(fnv1a('hello'));

@@ -17,4 +17,13 @@ describe('deriveStats', () => {
     expect(hi.maxHp).toBeGreaterThan(lo.maxHp);
     expect(hi.attack).toBeGreaterThan(lo.attack);
   });
+
+  it('is monotonic in AGI for tempoRate', () => {
+    let prev = -1;
+    for (let agi = 1; agi <= 9; agi++) {
+      const d = deriveStats({ str: 1, agi, int: 1, lck: 1 });
+      expect(d.tempoRate).toBeGreaterThan(prev);
+      prev = d.tempoRate;
+    }
+  });
 });
