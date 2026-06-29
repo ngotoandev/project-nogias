@@ -103,7 +103,7 @@ export function decideAction(actor: Unit, target: Unit, ctx: FightCtx): 'cast' |
 export function hasTrait(unit: Unit, id: TraitId): boolean { return unit.traits.includes(id); }
 
 export function proxyLeader(unit: Unit, units: Unit[]): Unit | null {
-  const allies = units.filter((u) => u.hp > 0 && u.side === unit.side && u.id !== unit.id);
+  const allies = units.filter((u) => u.hp > 0 && !u.exited && u.side === unit.side && u.id !== unit.id);
   if (allies.length === 0) return null;
   allies.sort((x, y) => y.priority - x.priority || (x.id < y.id ? -1 : 1));
   return allies[0]!;

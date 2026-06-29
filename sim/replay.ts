@@ -11,6 +11,8 @@ export function runScriptedFight(bundle: ScriptedFightBundle): FightResult {
   const s = initFight(bundle.setup, bundle.seed);
   let activation = 0;
   const actions = bundle.script; // applied by atActivation; ties broken by array order
+  // activation is incremented on EVERY stepFight call, including no-ops (when neither side
+  // has anything to do). atActivation: K fires just before the (K+1)-th stepFight (0-indexed).
   while (!s.outcome) {
     // Apply any actions stamped for this activation index, in array order, BEFORE the step.
     // atActivation: K means "apply just before the K-th step" (0-indexed).

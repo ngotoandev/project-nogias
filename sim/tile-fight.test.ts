@@ -642,6 +642,37 @@ describe('orderRetreat', () => {
     expect(r.hash).toBe('86e238c1');
   });
 
+  it('a fully-blocked retreater cannot reach the exit edge and ends as an on-field survivor', () => {
+    // 'r' is ordered to retreat W (toward x=0) but x=1 is a blocked cell.
+    // stepToward hits `stuck` on every retreat step → 'r' never reaches x=0.
+    // The enemy 'e' at x=0 is also walled off from 'r' (blocked cell between them),
+    // so neither unit can reach the other → fight times out. The retreater remains
+    // on-field with hp>0 and must appear in survivors WITHOUT a retreated flag.
+    const setup: FightSetup = {
+      grid: { width: 3, height: 1, blocked: [{ x: 1, y: 0 }] },
+      units: [
+        { id: 'r', side: 'A', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 2, y: 0 } },
+        { id: 'e', side: 'B', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
+      ],
+    };
+    const state = initFight(setup, 42);
+    orderRetreat(state, 'r', 'W');
+
+    // Run to completion (fight times out because both sides are walled off)
+    while (!state.outcome) stepFight(state);
+
+    // 'r' must still be alive (hp > 0) — it was never hit through the wall
+    const unitR = state.units.find((u) => u.id === 'r');
+    expect(unitR?.hp).toBeGreaterThan(0);
+    expect(unitR?.exited).toBeFalsy();
+
+    // 'r' appears in survivors as a plain on-field unit — no retreated flag
+    const result = fightResult(state);
+    const survivorR = result.survivors.find((s) => s.id === 'r');
+    expect(survivorR).toBeDefined();
+    expect(survivorR?.retreated).toBeUndefined();
+  });
+
   it('exited survivor is reported with retreated:true; on-field survivors omit the flag', () => {
     // 'a' is fast (agi=9, wide grid) — should exit before 'b' can kill it.
     // 'b' is slow; after 'a' exits, 'b' stays as an on-field survivor.

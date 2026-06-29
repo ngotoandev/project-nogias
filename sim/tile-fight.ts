@@ -265,6 +265,7 @@ export function orderRetreat(state: FightState, unitId: string, exitEdge: Edge):
   if (u) u.retreating = exitEdge;
 }
 
+// Must be called only after state.outcome is set — non-null-asserts outcome.winner and outcome.endReason.
 export function fightResult(state: FightState): FightResult {
   return {
     winner: state.outcome!.winner,
