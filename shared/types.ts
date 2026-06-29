@@ -5,6 +5,7 @@ export type SkillId = 'heavyStrike' | 'cleave';
 export type TraitId = 'reckless' | 'slowStarter' | 'bloodthirsty' | 'loyal'
   | 'coward' | 'headstrong' | 'stupid' | 'luckyFool';
 export type Temperament = 'brave' | 'cautious' | 'hotheaded' | 'stoic';
+export type Edge = 'N' | 'S' | 'E' | 'W';
 
 export interface Cell { x: number; y: number; }
 
@@ -55,6 +56,8 @@ export interface Unit {
   stallSinceTick: number;
   fleeingSinceTick: number;
   temperament?: Temperament;
+  retreating?: Edge;      // set by orderRetreat; unit moves toward this exit edge
+  exited?: boolean;       // true once unit reaches the exit edge and leaves the field
 }
 
 export interface GridSpec { width: number; height: number; blocked: Cell[]; }
@@ -75,7 +78,7 @@ export interface FightResult {
   winner: Side | 'draw';
   ticks: number;
   endReason: EndReason;
-  survivors: { id: string; side: Side; hp: number }[];
+  survivors: { id: string; side: Side; hp: number; retreated?: boolean }[];
   events: FightEvent[];
   hash: string;
 }

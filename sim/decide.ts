@@ -3,7 +3,7 @@ import type { Grid } from './grid';
 import { chebyshev, hasLineOfSight } from './grid';
 import { COWARD_FLEE_BP, RALLY_TICKS, LEADER_RADIUS, SKILL_COST, CLEAVE_RADIUS, CLEAVE_MIN_TARGETS, VALVE_TICKS, LEAN_VALVE_DELTA } from '../shared/config';
 
-export type MoveMode = 'engage' | 'flee';
+export type MoveMode = 'engage' | 'flee' | 'retreat';
 export type ActionKind = 'cast' | 'basic' | 'none';
 export interface FightCtx { totalTicks: number; units: Unit[]; grid: Grid; }
 export interface TurnIntent { targetId: string | null; move: MoveMode; charge: boolean; }
@@ -21,7 +21,7 @@ function leanKey(t: Temperament | undefined, e: Unit): number {
 // Nearest living enemy; tiebreak higher priority, then personality lean, then id asc.
 // (Moved verbatim from tile-fight.ts — this is the baseline "priority/targeting" layer.)
 export function chooseTarget(actor: Unit, units: Unit[]): Unit | null {
-  const enemies = units.filter((u) => u.hp > 0 && u.side !== actor.side);
+  const enemies = units.filter((u) => u.hp > 0 && !u.exited && u.side !== actor.side);
   if (enemies.length === 0) return null;
   enemies.sort((x, y) =>
     chebyshev(actor.pos, x.pos) - chebyshev(actor.pos, y.pos) ||
@@ -32,7 +32,7 @@ export function chooseTarget(actor: Unit, units: Unit[]): Unit | null {
 }
 
 function nearestEnemy(actor: Unit, units: Unit[]): Unit | null {
-  const en = units.filter((u) => u.hp > 0 && u.side !== actor.side);
+  const en = units.filter((u) => u.hp > 0 && !u.exited && u.side !== actor.side);
   if (en.length === 0) return null;
   en.sort((x, y) => chebyshev(actor.pos, x.pos) - chebyshev(actor.pos, y.pos) || (x.id < y.id ? -1 : 1));
   return en[0]!;
@@ -49,6 +49,10 @@ function cowardFlees(actor: Unit, ctx: FightCtx): boolean {
 }
 
 export function decideTurn(actor: Unit, ctx: FightCtx): TurnIntent {
+  // 0. retreat order (top precedence; Bloodthirsty suppresses it)
+  if (actor.retreating && !hasTrait(actor, 'bloodthirsty')) {
+    return { targetId: null, move: 'retreat', charge: false };
+  }
   // 1. trait decision hooks
   if (cowardFlees(actor, ctx)) {
     const t = nearestEnemy(actor, ctx.units);
@@ -66,7 +70,7 @@ export function decideTurn(actor: Unit, ctx: FightCtx): TurnIntent {
 // Living enemies within CLEAVE_RADIUS with LoS; sorted chebyshev asc → priority desc → id asc.
 export function cleaveTargets(actor: Unit, ctx: FightCtx): Unit[] {
   return ctx.units
-    .filter((u) => u.hp > 0 && u.side !== actor.side
+    .filter((u) => u.hp > 0 && !u.exited && u.side !== actor.side
       && chebyshev(actor.pos, u.pos) <= CLEAVE_RADIUS
       && hasLineOfSight(actor.pos, u.pos, (c) => ctx.grid.isBlocked(c)))
     .sort((x, y) =>

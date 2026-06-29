@@ -1,4 +1,4 @@
-import type { Cell, EndReason, FightEvent, FightResult, FightSetup, Side, Unit, UnitSpec } from '../shared/types';
+import type { Cell, Edge, EndReason, FightEvent, FightResult, FightSetup, Side, Unit, UnitSpec } from '../shared/types';
 import type { Rng } from '../shared/rng';
 import { makeRng } from '../shared/rng';
 import { deriveStats, effectiveDerived } from './stats';
@@ -56,7 +56,7 @@ export function stepFight(state: FightState): FightState {
   const { units, grid, rng } = state;
 
   const occupied = (c: Cell, selfId: string): boolean =>
-    units.some((u) => u.hp > 0 && u.id !== selfId && u.pos.x === c.x && u.pos.y === c.y);
+    units.some((u) => u.hp > 0 && !u.exited && u.id !== selfId && u.pos.x === c.x && u.pos.y === c.y);
 
   const inAttackPosition = (actor: Unit, target: Unit): boolean =>
     chebyshev(actor.pos, target.pos) <= actor.derived.attackRange &&
@@ -67,8 +67,8 @@ export function stepFight(state: FightState): FightState {
   };
 
   const sidesAlive = (): { a: boolean; b: boolean } => ({
-    a: units.some((u) => u.hp > 0 && u.side === 'A'),
-    b: units.some((u) => u.hp > 0 && u.side === 'B'),
+    a: units.some((u) => u.hp > 0 && !u.exited && u.side === 'A'),
+    b: units.some((u) => u.hp > 0 && !u.exited && u.side === 'B'),
   });
 
   // ---- ONE loop iteration (today's body), with `break`→finalize+return and `continue`→return ----
@@ -93,15 +93,39 @@ export function stepFight(state: FightState): FightState {
 
   const ctx = { totalTicks: state.totalTicks, units, grid };
   const intent = decideTurn(actor, ctx);
-  if (intent.targetId === null) return state;
-  const target = units.find((x) => x.id === intent.targetId)!;
 
   const canEnter = (c: Cell): boolean =>
     grid.inBounds(c) && !grid.isBlocked(c) && !occupied(c, actor.id);
 
+  if (intent.move === 'retreat') {
+    // Retreat: move toward the exit edge; skip attack this turn.
+    const edge = actor.retreating!;
+    const exitCell: Cell = edge === 'W' ? { x: 0, y: actor.pos.y }
+      : edge === 'E' ? { x: grid.width - 1, y: actor.pos.y }
+        : edge === 'N' ? { x: actor.pos.x, y: 0 }
+          : { x: actor.pos.x, y: grid.height - 1 }; // 'S'
+    for (let step = 0; step < actor.derived.moveRange; step++) {
+      const next = stepToward(actor.pos, exitCell, canEnter);
+      if (next.x === actor.pos.x && next.y === actor.pos.y) break; // stuck
+      state.events.push({ t: 'move', id: actor.id, from: { x: actor.pos.x, y: actor.pos.y }, to: { x: next.x, y: next.y } });
+      actor.pos = next;
+    }
+    // Check if the actor has reached the exit edge
+    const onExitEdge =
+      (edge === 'W' && actor.pos.x === 0) ||
+      (edge === 'E' && actor.pos.x === grid.width - 1) ||
+      (edge === 'N' && actor.pos.y === 0) ||
+      (edge === 'S' && actor.pos.y === grid.height - 1);
+    if (onExitEdge) actor.exited = true;
+    return state;
+  }
+
+  if (intent.targetId === null) return state;
+  const target = units.find((x) => x.id === intent.targetId)!;
+
   if (intent.move === 'flee') {
     // Flee: step away from all living enemies; skip attack this turn.
-    const enemyPositions = units.filter((u) => u.hp > 0 && u.side !== actor.side).map((u) => u.pos);
+    const enemyPositions = units.filter((u) => u.hp > 0 && !u.exited && u.side !== actor.side).map((u) => u.pos);
     const fleeSteps = actor.derived.moveRange + COWARD_FLEE_MOVE_BONUS;
     for (let step = 0; step < fleeSteps; step++) {
       const next = stepAway(actor.pos, enemyPositions, canEnter);
@@ -153,7 +177,7 @@ export function stepFight(state: FightState): FightState {
       if (rng.intInRange(0, 9999) < LUCKY_FOOL_BP) {
         // Build deterministic in-position enemy list: chebyshev asc → id asc.
         const inPos = units
-          .filter((x) => x.hp > 0 && x.side !== actor.side && inAttackPosition(actor, x))
+          .filter((x) => x.hp > 0 && !x.exited && x.side !== actor.side && inAttackPosition(actor, x))
           .sort((p, q) => chebyshev(actor.pos, p.pos) - chebyshev(actor.pos, q.pos) || (p.id < q.id ? -1 : 1));
         if (inPos.length > 0) {
           actualTarget = inPos[rng.intInRange(0, inPos.length - 1)]!;
@@ -236,12 +260,21 @@ export function stepFight(state: FightState): FightState {
   return state;
 }
 
+export function orderRetreat(state: FightState, unitId: string, exitEdge: Edge): void {
+  const u = state.units.find((x) => x.id === unitId);
+  if (u) u.retreating = exitEdge;
+}
+
 export function fightResult(state: FightState): FightResult {
   return {
     winner: state.outcome!.winner,
     ticks: state.totalTicks,
     endReason: state.outcome!.endReason,
-    survivors: state.units.filter((u) => u.hp > 0).map((u) => ({ id: u.id, side: u.side, hp: u.hp })),
+    survivors: state.units
+      .filter((u) => u.hp > 0)
+      .map((u) => u.exited
+        ? { id: u.id, side: u.side, hp: u.hp, retreated: true as const }
+        : { id: u.id, side: u.side, hp: u.hp }),
     events: state.events,
     hash: hashFight(state.units, state.totalTicks),
   };

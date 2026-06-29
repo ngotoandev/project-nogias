@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runTileFight, initFight, stepFight, fightResult, joinFight } from './tile-fight';
+import { runTileFight, initFight, stepFight, fightResult, joinFight, orderRetreat } from './tile-fight';
 import type { FightSetup, UnitSpec } from '../shared/types';
 
 const baseSetup: FightSetup = {
@@ -520,6 +520,155 @@ describe('runTileFight luckyFool trait', () => {
       if (ev.t !== 'attack' && ev.t !== 'miss') continue;
       expect(ev.target).not.toBe('b3');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 3: orderRetreat — exit-edge pullout, hittable en route, retreated survivor
+// ---------------------------------------------------------------------------
+
+describe('orderRetreat', () => {
+  it('an ordered unit moves toward its exit edge (W) and exits as a retreated survivor', () => {
+    // Unit 'a' is a fast melee unit on side A, starting at x=6.
+    // Enemy 'b' is slow and far, so it cannot kill 'a' before it exits.
+    // After orderRetreat(state, 'a', 'W'), 'a' should reach x=0 and become exited.
+    const setup: FightSetup = {
+      grid: { width: 8, height: 1, blocked: [] },
+      units: [
+        { id: 'a', side: 'A', attrs: { str: 5, agi: 9, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 6, y: 0 } },
+        { id: 'b', side: 'B', attrs: { str: 5, agi: 1, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 7, y: 0 } },
+      ],
+    };
+    const state = initFight(setup, 42);
+    orderRetreat(state, 'a', 'W');
+
+    // Run up to 500 steps (enough for the retreat to complete)
+    for (let i = 0; i < 500 && !state.outcome; i++) stepFight(state);
+
+    // 'a' should be exited
+    const unitA = state.units.find((u) => u.id === 'a');
+    expect(unitA?.exited).toBe(true);
+
+    // If the fight hasn't ended naturally, force check fightResult
+    if (!state.outcome) {
+      // finalize manually is not exposed; just check unit state
+    }
+
+    // If the fight ended (b alone = B wins, or a exited and b alive = ?)
+    // fightResult should show 'a' in survivors with retreated:true
+    if (state.outcome) {
+      const result = fightResult(state);
+      const survivor = result.survivors.find((s) => s.id === 'a');
+      expect(survivor).toBeDefined();
+      expect(survivor?.retreated).toBe(true);
+    }
+  });
+
+  it('a retreating unit is hittable en route (enemies can damage it before it exits)', () => {
+    // 'a' retreats W from x=7, 'b' is adjacent at x=6. 'b' acts first (agi=9 > agi=7).
+    // 'a' moves left 2 steps per turn; distance to x=0 is 7 cells → takes several turns.
+    // 'b' will chase and attack 'a' while it retreats.
+    const setup: FightSetup = {
+      grid: { width: 8, height: 1, blocked: [] },
+      units: [
+        { id: 'a', side: 'A', attrs: { str: 5, agi: 7, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 7, y: 0 } },
+        { id: 'b', side: 'B', attrs: { str: 9, agi: 9, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 6, y: 0 } },
+      ],
+    };
+    const state = initFight(setup, 42);
+    orderRetreat(state, 'a', 'W');
+
+    // Step for a while — 'a' retreats, 'b' pursues and attacks it
+    for (let i = 0; i < 500 && !state.outcome; i++) stepFight(state);
+
+    // The key assertion: the enemy CAN attack the retreating unit (events exist for it).
+    // 'a' stays hittable while on the field (retreating but not yet exited).
+    const attacksOnA = state.events.filter((e) => e.t === 'attack' && e.target === 'a');
+    const missesOnA = state.events.filter((e) => e.t === 'miss' && e.target === 'a');
+    // Either attacks or misses exist (enemy attempted to hit 'a' while it was retreating but still on field)
+    expect(attacksOnA.length + missesOnA.length).toBeGreaterThan(0);
+  });
+
+  it('orderRetreat sets the retreating field on the unit', () => {
+    const setup: FightSetup = {
+      grid: { width: 8, height: 8, blocked: [] },
+      units: [
+        { id: 'a', side: 'A', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
+        { id: 'b', side: 'B', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 7, y: 7 } },
+      ],
+    };
+    const state = initFight(setup, 42);
+    orderRetreat(state, 'a', 'E');
+    const unitA = state.units.find((u) => u.id === 'a');
+    expect(unitA?.retreating).toBe('E');
+  });
+
+  it('orderRetreat on unknown id is a no-op', () => {
+    const setup: FightSetup = {
+      grid: { width: 8, height: 8, blocked: [] },
+      units: [
+        { id: 'a', side: 'A', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
+        { id: 'b', side: 'B', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 7, y: 7 } },
+      ],
+    };
+    const state = initFight(setup, 42);
+    expect(() => orderRetreat(state, 'nonexistent', 'N')).not.toThrow();
+  });
+
+  it('Bloodthirsty unit ignores retreat order and engages instead', () => {
+    // 'a' has bloodthirsty + retreating set; it should still engage (not move to exit edge)
+    const setup: FightSetup = {
+      grid: { width: 8, height: 1, blocked: [] },
+      units: [
+        { id: 'a', side: 'A', attrs: { str: 5, agi: 9, int: 1, lck: 1 }, attackKind: 'melee', traits: ['bloodthirsty'], priority: 5, pos: { x: 0, y: 0 } },
+        { id: 'b', side: 'B', attrs: { str: 5, agi: 1, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 7, y: 0 } },
+      ],
+    };
+    const state = initFight(setup, 42);
+    orderRetreat(state, 'a', 'W');
+
+    // Step several times
+    for (let i = 0; i < 100 && !state.outcome; i++) stepFight(state);
+
+    // 'a' should NOT have exited (bloodthirsty ignores the order)
+    const unitA = state.units.find((u) => u.id === 'a')!;
+    expect(unitA.exited).toBeFalsy();
+
+    // 'a' should have attacked (engaged) rather than retreated
+    const attacksByA = state.events.filter((e) => (e.t === 'attack' || e.t === 'miss') && e.id === 'a');
+    expect(attacksByA.length).toBeGreaterThan(0);
+  });
+
+  it('non-retreating units are unaffected by exited filter (existing behavior preserved)', () => {
+    // Verify golden hash is unchanged when no retreats happen
+    const r = runTileFight(baseSetup, 42);
+    expect(r.hash).toBe('86e238c1');
+  });
+
+  it('exited survivor is reported with retreated:true; on-field survivors omit the flag', () => {
+    // 'a' is fast (agi=9, wide grid) — should exit before 'b' can kill it.
+    // 'b' is slow; after 'a' exits, 'b' stays as an on-field survivor.
+    const setup: FightSetup = {
+      grid: { width: 10, height: 1, blocked: [] },
+      units: [
+        { id: 'a', side: 'A', attrs: { str: 5, agi: 9, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 8, y: 0 } },
+        { id: 'b', side: 'B', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 9, y: 0 } },
+      ],
+    };
+    const state = initFight(setup, 42);
+    orderRetreat(state, 'a', 'W');
+
+    // Run to completion
+    while (!state.outcome) stepFight(state);
+
+    const result = fightResult(state);
+    const survivorA = result.survivors.find((s) => s.id === 'a');
+    const survivorB = result.survivors.find((s) => s.id === 'b');
+
+    // 'a' exited → retreated:true
+    expect(survivorA?.retreated).toBe(true);
+    // 'b' on-field → no retreated flag
+    expect(survivorB?.retreated).toBeUndefined();
   });
 });
 

@@ -6,7 +6,7 @@ export const TEMPO_THRESHOLD = 100;
 // reaches the threshold, then returns the actor. Deterministic: among
 // eligible units, highest gauge wins; ties broken by priority desc, id asc.
 export function nextActor(units: Unit[]): { actor: Unit; ticks: number } | null {
-  const alive = units.filter((u) => u.hp > 0);
+  const alive = units.filter((u) => u.hp > 0 && !u.exited);
   if (alive.length === 0) return null;
 
   let ticks = 0;

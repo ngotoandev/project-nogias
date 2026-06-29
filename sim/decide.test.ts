@@ -65,6 +65,46 @@ describe('decideTurn (Coward trait)', () => {
   });
 });
 
+describe('decideTurn (retreat order)', () => {
+  it('a retreating unit returns move=retreat (no target)', () => {
+    const a = u('a', 'A', 3, 3); a.retreating = 'W';
+    const enemy = u('e', 'B', 5, 3);
+    expect(decideTurn(a, ctx([a, enemy])).move).toBe('retreat');
+  });
+
+  it('retreat intent has no target', () => {
+    const a = u('a', 'A', 3, 3); a.retreating = 'W';
+    const enemy = u('e', 'B', 5, 3);
+    expect(decideTurn(a, ctx([a, enemy])).targetId).toBeNull();
+  });
+
+  it('retreat intent has charge=false', () => {
+    const a = u('a', 'A', 3, 3); a.retreating = 'W';
+    const enemy = u('e', 'B', 5, 3);
+    expect(decideTurn(a, ctx([a, enemy])).charge).toBe(false);
+  });
+
+  it('Bloodthirsty ignores a retreat order (engages instead)', () => {
+    const a = u('a', 'A', 3, 3); a.retreating = 'W'; a.traits = ['bloodthirsty'];
+    const enemy = u('e', 'B', 5, 3);
+    expect(decideTurn(a, ctx([a, enemy])).move).not.toBe('retreat');
+  });
+
+  it('retreat has top precedence — fires before Coward flee', () => {
+    const a = u('a', 'A', 3, 3);
+    a.retreating = 'W'; a.traits = ['coward']; a.hp = 1; a.fleeingSinceTick = 5;
+    const enemy = u('e', 'B', 5, 3);
+    expect(decideTurn(a, ctx([a, enemy], 10)).move).toBe('retreat');
+  });
+
+  it('retreat has top precedence — fires before Headstrong charge', () => {
+    const a = u('a', 'A', 3, 3);
+    a.retreating = 'W'; a.traits = ['headstrong'];
+    const enemy = u('e', 'B', 5, 3);
+    expect(decideTurn(a, ctx([a, enemy])).move).toBe('retreat');
+  });
+});
+
 describe('decideTurn (Headstrong trait)', () => {
   it('headstrong targets nearest and sets charge=true', () => {
     const h = u('h', 'A', 0, 0); h.traits = ['headstrong'];
