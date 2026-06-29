@@ -566,13 +566,37 @@ describe('joinFight', () => {
     expect(joiner).toBeDefined();
     expect(joiner!.gauge).toBe(0);
 
-    // The very next stepFight call must NOT produce an event from a2
-    // (gauge=0 means tempo hasn't filled yet — nextActor won't select it until it accumulates tempo).
-    stepFight(state);
-    const eventsAfterOneStep = state.events.slice(eventsBeforeJoin);
-    const a2ActedImmediately = eventsAfterOneStep.some((e) =>
-      (e.t === 'move' || e.t === 'attack' || e.t === 'miss' || e.t === 'misfire') && e.id === 'a2');
-    expect(a2ActedImmediately).toBe(false);
+    // Behavioral boundary: step until a PRE-EXISTING unit (a1 or b1) emits an
+    // action event after the join, then assert a2 has still not acted.
+    // This is a stronger "next boundary" guarantee than a single-step check:
+    // a one-tick-short bug (gauge=TEMPO_THRESHOLD-1) would pass a single-step
+    // check yet fail here because a2 would fire before a1/b1 get another turn.
+    const isPreExisting = (id: string) => id === 'a1' || id === 'b1';
+    const isActionEvent = (e: (typeof state.events)[number]) =>
+      (e.t === 'move' || e.t === 'attack' || e.t === 'miss' || e.t === 'misfire') &&
+      'id' in e && isPreExisting(e.id);
+
+    let preExistingActedAfterJoin = false;
+    while (!preExistingActedAfterJoin && !state.outcome) {
+      stepFight(state);
+      const postJoin = state.events.slice(eventsBeforeJoin);
+      preExistingActedAfterJoin = postJoin.some(isActionEvent);
+    }
+    // At least one pre-existing unit must have acted (fight didn't end instantly)
+    expect(preExistingActedAfterJoin).toBe(true);
+
+    // a2 must NOT have acted yet — it was deferred past an entire pre-existing activation
+    const postJoinEvents = state.events.slice(eventsBeforeJoin);
+    const a2ActedBeforePreExisting = (() => {
+      for (const e of postJoinEvents) {
+        if ((e.t === 'move' || e.t === 'attack' || e.t === 'miss' || e.t === 'misfire') && 'id' in e) {
+          if (e.id === 'a2') return true;   // a2 fired first — regression
+          if (isPreExisting(e.id)) return false; // pre-existing fired first — correct
+        }
+      }
+      return false; // no action event at all (shouldn't happen given the loop above)
+    })();
+    expect(a2ActedBeforePreExisting).toBe(false);
 
     // Continue stepping: a2 must eventually act (participate in targeting / events)
     let a2EverActs = false;
