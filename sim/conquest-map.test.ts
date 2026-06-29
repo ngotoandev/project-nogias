@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { initConquest, hashMap, advance } from './conquest-map';
+import { initConquest, hashMap, advance, committedCount } from './conquest-map';
 import type { MapSetup } from '../shared/types';
 
 // 3 tiles in a row: t0(player) — t1(neutral, empty) — t2(enemy, garrison). Helper builds it.
@@ -248,4 +248,91 @@ it('dispatch with gate: rejects when gated launch tile is not owned', () => {
   advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2', gate: 'W' }]);
   expect(s.armies.find(x => x.id === 'a1')!.state).toBe('garrisoned');
   expect(s.events.some(e => e.t === 'rejected' && e.armyId === 'a1')).toBe(true);
+});
+
+// ── Task 3: Travel phase + arrival resolution ─────────────────────────────────
+
+// t0(player) — t1(player) — t2(enemy, garrison): same as setupWithT1Owned but unit has agi=10.
+// slowestTempo → tempoRate = TEMPO_BASE(10) + 10 = 20. TRAVEL_THRESHOLD/20 = 5 ticks per hop.
+function setupT1OwnedFastArmy(): MapSetup {
+  const enemy = (id: string) => ({ id, side: 'B' as const, attackKind: 'melee' as const, attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } });
+  return {
+    tiles: [
+      { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+      { id: 't1', type: 'cache', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
+      { id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' }, garrison: [enemy('g1')] },
+    ],
+    armies: [{ id: 'a1', units: [{ id: 'a1u', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 10, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }], tile: 't0' }],
+  };
+}
+
+// t0(player) — t1(neutral, empty) — t2(enemy, garrison): default setup() has t1 neutral.
+// For undefended-capture test we need a tile with no garrison that's adjacent to owned.
+// Use a 2-tile setup: t0(player) adjacent to tX(neutral, no garrison).
+function setupUndefendedCapture(): MapSetup {
+  return {
+    tiles: [
+      { id: 't0', type: 'start', owner: 'player', neighbors: { E: 'tX' }, garrison: [] },
+      { id: 'tX', type: 'cache', owner: 'neutral', neighbors: { W: 't0' }, garrison: [] },
+    ],
+    armies: [{ id: 'a1', units: [{ id: 'a1u', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 10, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }], tile: 't0' }],
+  };
+}
+
+it('a travelling army hops every THRESHOLD/slowestTempo ticks (agi=10, tempo 20 → every 5)', () => {
+  const s = initConquest(setupT1OwnedFastArmy()); // t0,t1 player; t2 enemy; a1 unit agi=10
+  advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]); // route ['t1','t2']; counts as tick 0
+  const a = () => s.armies.find(x => x.id === 'a1')!;
+  for (let i = 0; i < 4; i++) advance(s, []);  // ticks 1..4: gauge accumulates, no hop yet
+  expect(a().tile).toBe('t0');
+  advance(s, []); // tick 5: gauge reaches 100 → hop to t1
+  expect(a().tile).toBe('t1');
+});
+
+it('arriving at an UNDEFENDED tile captures it (owner→player, garrisoned, slot freed, captured event)', () => {
+  // Route is [tX] (1 hop: t0 is launch tile, adjacent to tX).
+  // Army needs 5 ticks to hop (tempo 20, threshold 100).
+  // After 5 ticks the army arrives at tX.
+  const s = initConquest(setupUndefendedCapture());
+  advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 'tX' }]); // tick 0: route=['tX']
+  const a = () => s.armies.find(x => x.id === 'a1')!;
+  // Advance 4 more ticks (no hop yet — 5 total needed for first hop which is also arrival)
+  for (let i = 0; i < 4; i++) advance(s, []);
+  expect(a().tile).toBe('t0'); // not arrived yet
+  advance(s, []); // tick 5: hops to tX AND arrives → resolveArrival
+  // Capture: owner→player, army garrisoned, target cleared, captured event
+  expect(a().tile).toBe('tX');
+  expect(a().state).toBe('garrisoned');
+  expect(a().target).toBeUndefined();
+  expect(s.tiles.find(t => t.id === 'tX')!.owner).toBe('player');
+  expect(s.events.some(e => e.t === 'captured' && e.tile === 'tX' && e.by === 'a1')).toBe(true);
+  // Slot freed: committedCount should be 0 (target cleared)
+  expect(committedCount(s, 'tX')).toBe(0);
+});
+
+it('arriving at a DEFENDED tile becomes contested (no resolution, slot held, contested event)', () => {
+  // setupT1OwnedFastArmy: t2 has garrison → defended.
+  // Route ['t1','t2'] = 2 hops. First hop at tick 5 (to t1), second at tick 10 (to t2 = arrival).
+  const s = initConquest(setupT1OwnedFastArmy());
+  advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]); // tick 0
+  const a = () => s.armies.find(x => x.id === 'a1')!;
+  // 4 advances: no hop yet (gauge < 100 after each)
+  for (let i = 0; i < 4; i++) advance(s, []);
+  expect(a().tile).toBe('t0');
+  advance(s, []); // tick 5: hop to t1 (route still has ['t2'])
+  expect(a().tile).toBe('t1');
+  expect(a().state).toBe('travelling');
+  // 4 more advances: gauge restarted from 0 after hop; 4 advances = 80
+  for (let i = 0; i < 4; i++) advance(s, []);
+  expect(a().tile).toBe('t1'); // still at t1
+  advance(s, []); // tick 10: hop to t2 AND arrives → resolveArrival (defended)
+  expect(a().tile).toBe('t2');
+  expect(a().state).toBe('contested');
+  // Owner still enemy (no capture)
+  expect(s.tiles.find(t => t.id === 't2')!.owner).toBe('enemy');
+  // contested event fired
+  expect(s.events.some(e => e.t === 'contested' && e.tile === 't2')).toBe(true);
+  // Slot still held: committedCount = 1 (army keeps target)
+  expect(a().target).toBe('t2');
+  expect(committedCount(s, 't2')).toBe(1);
 });

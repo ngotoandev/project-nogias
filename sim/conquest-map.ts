@@ -1,7 +1,7 @@
 import type { MapSetup, MapState, MapCommand, MapEdge, MapTile, Army, UnitSpec } from '../shared/types';
 import { fnv1a } from './hash';
 import { deriveStats } from './stats';
-import { MAX_COMMIT } from '../shared/config';
+import { MAX_COMMIT, TRAVEL_THRESHOLD } from '../shared/config';
 
 const cloneSpec = (u: UnitSpec): UnitSpec => ({
   ...u,
@@ -93,6 +93,32 @@ function bfsRoute(state: MapState, fromId: string, toTile: MapTile, gate?: MapEd
   return null;
 }
 
+function resolveArrival(state: MapState, army: Army): void {
+  if (army.state === 'retreating') {
+    army.state = 'garrisoned';
+    army.target = undefined;
+    return; // Task 4 handles retreat command; here just land
+  }
+  const tile = tileById(state, army.tile)!;
+  if (tile.owner === 'player' || tile.garrison.length === 0) {
+    // undefended (or already ours): capture / settle — fight-free
+    if (tile.owner !== 'player') {
+      tile.owner = 'player';
+      state.events.push({ t: 'captured', tile: tile.id, by: army.id });
+    }
+    army.state = 'garrisoned';
+    army.target = undefined;
+  } else {
+    // defended: inert engagement seam (Plan 3 resolves)
+    army.state = 'contested';
+    const attackers = state.armies
+      .filter((a) => a.target === tile.id && a.state === 'contested')
+      .map((a) => a.id)
+      .sort();
+    state.events.push({ t: 'contested', tile: tile.id, attackers });
+  }
+}
+
 function idOf(c: MapCommand): string {
   return c.armyId;
 }
@@ -125,6 +151,12 @@ function applyDispatch(
 }
 
 export function advance(state: MapState, commands: MapCommand[]): MapState {
+  // Snapshot which armies are already travelling/retreating BEFORE commands run.
+  // Newly dispatched armies this tick do NOT accumulate gauge until next tick.
+  const travellingBefore = new Set(
+    state.armies.filter((a) => a.state === 'travelling' || a.state === 'retreating').map((a) => a.id),
+  );
+
   const sorted = commands.slice().sort((a, b) => {
     if (a.t < b.t) return -1;
     if (a.t > b.t) return 1;
@@ -137,7 +169,24 @@ export function advance(state: MapState, commands: MapCommand[]): MapState {
     if (c.t === 'dispatch') applyDispatch(state, c);
     // retreat → Task 4
   }
-  // travel phase → Task 3 (slots in BEFORE totalTicks++)
+
+  // Travel phase: only armies that were already travelling/retreating BEFORE this tick's commands.
+  for (const army of state.armies.slice().sort((a, b) => (a.id < b.id ? -1 : 1))) {
+    if (!travellingBefore.has(army.id)) continue;
+    army.travelGauge += slowestTempo(army);
+    while (army.travelGauge >= TRAVEL_THRESHOLD && army.route && army.route.length > 0) {
+      army.travelGauge -= TRAVEL_THRESHOLD;
+      const from = army.tile;
+      const next = army.route.shift()!;
+      army.tile = next;
+      state.events.push({ t: 'hopped', armyId: army.id, from, to: next });
+      if (army.route.length === 0) {
+        resolveArrival(state, army);
+        break; // reached destination
+      }
+    }
+  }
+
   state.totalTicks++;
   return state;
 }
