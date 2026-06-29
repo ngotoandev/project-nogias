@@ -5,9 +5,11 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json"
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "bundle": "esbuild sim/index.ts --bundle --format=iife --global-name=Sim --target=es2015 --outfile=dist/sim-bundle.js"
   },
   "devDependencies": {
+    "esbuild": "^0.28.1",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }
