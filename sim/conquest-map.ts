@@ -123,8 +123,9 @@ function applyRetreat(state: MapState, armyId: string): void {
   } else {
     // On an enemy tile (contested) → hop back to first owned neighbor (N,S,E,W order)
     const back = ownedNeighborIds(state, cur)[0];
+    if (!back) throw new Error(`applyRetreat: contested army ${armyId} at ${cur.id} has no owned neighbor`);
     army.state = 'retreating';
-    army.route = back ? [back] : [];
+    army.route = [back];
     army.travelGauge = 0;
   }
 }
@@ -133,6 +134,7 @@ function resolveArrival(state: MapState, army: Army): void {
   if (army.state === 'retreating') {
     army.state = 'garrisoned';
     army.target = undefined;
+    army.route = undefined;
     state.events.push({ t: 'retreated', armyId: army.id, to: army.tile });
     return;
   }

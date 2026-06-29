@@ -343,6 +343,7 @@ it('retreat a contested army: frees its slot, returns it to owned territory, end
   expect(a().tile).toBe('t1');
   expect(a().state).toBe('garrisoned');
   expect(a().target).toBeUndefined();
+  expect(a().route).toBeUndefined();
   // retreated event should be emitted on arrival
   expect(s.events.some(e => e.t === 'retreated' && e.armyId === 'a1' && e.to === 't1')).toBe(true);
 });
