@@ -146,14 +146,15 @@ describe('runScriptedFight', () => {
   // ---------------------------------------------------------------------------
   //
   // Scenario: width-8 grid (1 row).
-  //   a1 (A, str=5, agi=3): weak attacker, starts at x=0. Stays on-field throughout.
+  //   a1 (A, str=8, agi=5): attacker, starts at x=0. Stays on-field throughout (barely survives
+  //       with 4 hp in seed=9; use str=8 not str=5 so a1 outlasts the 6 activations before b1 retreats).
   //   b1 (B, str=15, agi=6): tanky (hp=95), fast (agi=6 → moveRange=3). Starts at x=6.
   //       Ordered to retreat E at activation 6. With moveRange=3 and only 1 cell to x=7,
   //       b1 exits on the first retreat step.
   //   a2 (joiner, A, str=8, agi=5): reinforcement, joins at activation 2 at x=1.
   //
   // Seed choice: seed=9.
-  //   - a1 is slow and weak → b1 will survive many activations without being killed.
+  //   - a1 has enough HP (hp=60) to survive 6 activations while b1 is tanky (hp=95).
   //   - By activation 2 a1/b1 will have closed distance (or exchanged 1-2 attacks).
   //   - a2 joins (gauge=0), acts after b1/a1 complete a full turn boundary.
   //   - At activation 6 b1 retreats E: b1 starts at x=6 and moves right (toward x=7, the E edge).
@@ -172,7 +173,7 @@ describe('runScriptedFight', () => {
     const combinedSetup = {
       grid: { width: 8, height: 1, blocked: [] },
       units: [
-        { id: 'a1', side: 'A' as const, attrs: { str: 5, agi: 3, int: 1, lck: 1 }, attackKind: 'melee' as const, priority: 5, pos: { x: 0, y: 0 } },
+        { id: 'a1', side: 'A' as const, attrs: { str: 8, agi: 5, int: 1, lck: 1 }, attackKind: 'melee' as const, priority: 5, pos: { x: 0, y: 0 } },
         { id: 'b1', side: 'B' as const, attrs: { str: 15, agi: 6, int: 1, lck: 1 }, attackKind: 'melee' as const, priority: 5, pos: { x: 6, y: 0 } },
       ],
     };
@@ -180,6 +181,8 @@ describe('runScriptedFight', () => {
       id: 'a2', side: 'A', attrs: { str: 8, agi: 5, int: 1, lck: 1 }, attackKind: 'melee', priority: 5,
       pos: { x: 1, y: 0 },
     };
+    // atActivation: K fires when the activation counter reaches K, i.e. just before the
+    // (K+1)-th stepFight call (0-indexed) — see runScriptedFight's dispatch loop.
     const bundle: ScriptedFightBundle = {
       version: 2,
       setup: combinedSetup,
@@ -197,6 +200,12 @@ describe('runScriptedFight', () => {
     expect(b1Survivor?.retreated).toBe(true);
 
     // (b) On-field survivors do NOT carry the retreated flag (absent / undefined).
+    //     Assert the expected on-field units are actually present so the loop below
+    //     cannot pass vacuously on an empty array (e.g. if fightResult drops them).
+    expect(r.survivors.find(s => s.id === 'a1')).toBeDefined();
+    expect(r.survivors.find(s => s.id === 'a2')).toBeDefined();
+    expect(r.survivors.find(s => s.id === 'a1')?.retreated).toBeUndefined();
+    expect(r.survivors.find(s => s.id === 'a2')?.retreated).toBeUndefined();
     const onFieldSurvivors = r.survivors.filter(s => s.id !== 'b1');
     for (const s of onFieldSurvivors) {
       expect(s.retreated).toBeUndefined();
