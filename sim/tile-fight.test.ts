@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runTileFight } from './tile-fight';
+import { runTileFight, initFight, stepFight, fightResult } from './tile-fight';
 import type { FightSetup } from '../shared/types';
 
 const baseSetup: FightSetup = {
@@ -9,6 +9,19 @@ const baseSetup: FightSetup = {
     { id: 'b1', side: 'B', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 7, y: 7 } },
   ],
 };
+
+describe('step-equivalence', () => {
+  it('stepping to completion equals runTileFight (same hash, winner, ticks, events)', () => {
+    const direct = runTileFight(baseSetup, 42);
+    const s = initFight(baseSetup, 42);
+    while (!s.outcome) stepFight(s);
+    const stepped = fightResult(s);
+    expect(stepped.hash).toBe(direct.hash);
+    expect(stepped.winner).toBe(direct.winner);
+    expect(stepped.ticks).toBe(direct.ticks);
+    expect(stepped.events).toEqual(direct.events);
+  });
+});
 
 describe('runTileFight', () => {
   it('resolves with an end event and a consistent endReason', () => {
