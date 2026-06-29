@@ -25,3 +25,12 @@ export const MOVE_RANGE = 3;
 export const MELEE_RANGE = 1;
 export const RANGED_RANGE = 4;
 export const MAGIC_RANGE = 3;
+// Mana & skills (Plan 5):
+export const MANA_MAX = 100;
+export const MANA_BASE_BP = 10000;  // charge-rate baseline (1.00) + the bp denominator
+export const MANA_INT_COEF = 400;   // +bp of charge rate per INT
+export const M_HIT = 14;            // flat charge when a basic attack lands
+export const M_TAKEN = 30;          // charge scale when taking damage
+export const M_TAKEN_CAP = 22;      // per-hit cap on charge-from-taken
+export const HEAVY_STRIKE_COST = 70;
+export const HEAVY_STRIKE_MULT = 180; // x100 (1.80)
