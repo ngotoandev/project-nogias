@@ -5,6 +5,7 @@ import {
   SQRT_SCALE, ACC_BASE_BP, ACC_COEF, EVA_COEF, EVA_CAP_BP,
   CRIT_COEF, CRIT_CAP_BP, CRITMULT_BASE_X100, CRITMULT_COEF,
   TEMPO_BASE, MOVE_RANGE, MELEE_RANGE, RANGED_RANGE, MAGIC_RANGE,
+  MANA_MAX, MANA_BASE_BP, MANA_INT_COEF,
 } from '../shared/config';
 
 function atkFor(a: Attributes, kind: AttackKind): number {
@@ -35,5 +36,7 @@ export function deriveStats(a: Attributes, attackKind: AttackKind): DerivedStats
     tempoRate: TEMPO_BASE + a.agi,
     moveRange: MOVE_RANGE,
     attackRange: rangeFor(attackKind),
+    maxMana: MANA_MAX,
+    manaChargeBp: MANA_BASE_BP + MANA_INT_COEF * a.int,
   };
 }

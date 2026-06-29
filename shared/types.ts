@@ -1,6 +1,7 @@
 export type Side = 'A' | 'B';
 export type AttackKind = 'melee' | 'ranged' | 'magic';
 export type DamageChannel = 'physical' | 'magic';
+export type SkillId = 'heavyStrike';
 
 export interface Cell { x: number; y: number; }
 
@@ -19,6 +20,8 @@ export interface DerivedStats {
   tempoRate: number;
   moveRange: number;
   attackRange: number;
+  maxMana: number;
+  manaChargeBp: number;   // INT-scaled charge multiplier (basis points)
 }
 
 export interface UnitSpec {
@@ -26,6 +29,7 @@ export interface UnitSpec {
   side: Side;
   attrs: Attributes;
   attackKind: AttackKind;
+  skill?: SkillId;
   priority: number;    // higher = more forward + more aggro
   pos: Cell;
 }
@@ -39,6 +43,8 @@ export interface Unit {
   hp: number;
   derived: DerivedStats;
   gauge: number;
+  mana: number;           // current; starts 0; no carry between fights
+  skill?: SkillId;        // optional active (copied from the spec)
 }
 
 export interface GridSpec { width: number; height: number; blocked: Cell[]; }
@@ -49,7 +55,7 @@ export type EndReason = 'decisive' | 'wipe' | 'timeout';
 
 export type FightEvent =
   | { t: 'move'; id: string; from: Cell; to: Cell }
-  | { t: 'attack'; id: string; target: string; damage: number; crit: boolean; channel: DamageChannel; lethal: boolean }
+  | { t: 'attack'; id: string; target: string; damage: number; crit: boolean; channel: DamageChannel; lethal: boolean; skill?: SkillId }
   | { t: 'miss'; id: string; target: string }
   | { t: 'death'; id: string }
   | { t: 'end'; winner: Side | 'draw'; ticks: number; endReason: EndReason };

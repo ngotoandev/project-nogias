@@ -16,6 +16,8 @@ describe('deriveStats', () => {
     expect(d.tempoRate).toBe(15);
     expect(d.moveRange).toBe(3);
     expect(d.attackRange).toBe(1);
+    expect(d.maxMana).toBe(100);
+    expect(d.manaChargeBp).toBe(10400);   // 10000 + 400*INT(1)
   });
 
   it('uses the ranged formula on the physical channel', () => {
@@ -38,6 +40,7 @@ describe('deriveStats', () => {
     expect(d.critChanceBp).toBe(2012);
     expect(d.critMultX100).toBe(158);
     expect(d.attackRange).toBe(3);
+    expect(d.manaChargeBp).toBe(13600);   // 10000 + 400*INT(9)
   });
 
   it('clamps evasion and crit chance to their caps', () => {
