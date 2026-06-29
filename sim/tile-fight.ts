@@ -4,6 +4,7 @@ import { deriveStats } from './stats';
 import { makeGrid, chebyshev, stepToward } from './grid';
 import { nextActor, TEMPO_THRESHOLD } from './initiative';
 import { hashFight } from './hash';
+import { hitBp, mitigatedDamage, applyCrit } from './combat';
 
 const MAX_TICKS = 100_000; // safety cap against stalemates
 
@@ -21,7 +22,7 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
   const rng = makeRng(seed);
   const grid = makeGrid(setup.grid);
   const units: Unit[] = setup.units.map((u) => {
-    const derived = deriveStats(u.attrs);
+    const derived = deriveStats(u.attrs, u.attackKind);
     return {
       id: u.id, side: u.side, attrs: { ...u.attrs }, priority: u.priority,
       pos: { x: u.pos.x, y: u.pos.y }, hp: derived.maxHp, derived, gauge: 0,
@@ -64,16 +65,24 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
       actor.pos = next;
     }
 
-    // Attack if now in range.
+    // Attack if in range: hit roll -> channel mitigation -> crit roll.
     if (chebyshev(actor.pos, target.pos) <= actor.derived.attackRange) {
-      const variance = rng.intInRange(90, 110); // +/-10%
-      const damage = Math.max(1, Math.floor((actor.derived.attack * variance) / 100));
-      target.hp -= damage;
-      const lethal = target.hp <= 0;
-      events.push({ t: 'attack', id: actor.id, target: target.id, damage, lethal });
-      if (lethal) {
-        target.hp = 0;
-        events.push({ t: 'death', id: target.id });
+      const chance = hitBp(actor.derived.accuracyBp, target.derived.evasionBp);
+      if (rng.intInRange(0, 9999) >= chance) {
+        events.push({ t: 'miss', id: actor.id, target: target.id });
+      } else {
+        const channel = actor.derived.channel;
+        const def = channel === 'physical' ? target.derived.physDef : target.derived.magicResist;
+        let damage = mitigatedDamage(actor.derived.atk, def);
+        const crit = rng.intInRange(0, 9999) < actor.derived.critChanceBp;
+        if (crit) damage = applyCrit(damage, actor.derived.critMultX100);
+        target.hp -= damage;
+        const lethal = target.hp <= 0;
+        events.push({ t: 'attack', id: actor.id, target: target.id, damage, crit, channel, lethal });
+        if (lethal) {
+          target.hp = 0;
+          events.push({ t: 'death', id: target.id });
+        }
       }
     }
   }

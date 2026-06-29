@@ -1,4 +1,6 @@
 export type Side = 'A' | 'B';
+export type AttackKind = 'melee' | 'ranged' | 'magic';
+export type DamageChannel = 'physical' | 'magic';
 
 export interface Cell { x: number; y: number; }
 
@@ -6,16 +8,24 @@ export interface Attributes { str: number; agi: number; int: number; lck: number
 
 export interface DerivedStats {
   maxHp: number;
-  attack: number;      // physical channel (Plan 1: single channel)
-  tempoRate: number;   // initiative gauge fill per tick
-  moveRange: number;   // cells per turn
-  attackRange: number; // Chebyshev range
+  atk: number;            // effective attack for the unit's attackKind
+  channel: DamageChannel; // melee/ranged -> physical, magic -> magic
+  physDef: number;
+  magicResist: number;
+  accuracyBp: number;     // basis points (10000 = 1.00)
+  evasionBp: number;      // basis points
+  critChanceBp: number;   // basis points
+  critMultX100: number;   // x100 (125 = 1.25)
+  tempoRate: number;
+  moveRange: number;
+  attackRange: number;
 }
 
 export interface UnitSpec {
   id: string;
   side: Side;
   attrs: Attributes;
+  attackKind: AttackKind;
   priority: number;    // higher = more forward + more aggro
   pos: Cell;
 }
@@ -39,7 +49,8 @@ export type EndReason = 'decisive' | 'wipe' | 'timeout';
 
 export type FightEvent =
   | { t: 'move'; id: string; from: Cell; to: Cell }
-  | { t: 'attack'; id: string; target: string; damage: number; lethal: boolean }
+  | { t: 'attack'; id: string; target: string; damage: number; crit: boolean; channel: DamageChannel; lethal: boolean }
+  | { t: 'miss'; id: string; target: string }
   | { t: 'death'; id: string }
   | { t: 'end'; winner: Side | 'draw'; ticks: number; endReason: EndReason };
 
