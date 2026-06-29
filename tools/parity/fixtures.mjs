@@ -8,11 +8,11 @@
 //   headstrong-charge-seed3          (db26f7c9) — headstrong ranged charges to melee instead of kiting
 //   stupid-misfire-seed80            (e7eaf7bb) — stupid melee unit misfires basic attack (seed=80 fires 10% gate)
 //   luckyfool-retarget-seed173       (068a1267) — luckyFool retargets to b2 (seed=173 fires 5% gate, idx=1)
-//   scripted-join-seed5              (7af6bcae) — A reinforcement joins at activation 3; turns B-win into A-win
-//   scripted-retreat-seed7           (63b649df) — b1 ordered to retreat E at activation 2; crosses width-7 grid, takes hits, exits retreated
 //   cleave-cluster-seed5             (57f7a0ff) — melee cleave unit reaches 2 adjacent enemies; casts Cleave hitting ≥2
 //   cleave-valve-seed7               (b028690d) — melee cleave unit vs lone tanky enemy; valve force-casts after VALVE_TICKS
 //   personality-tiebreak-seed1       (8d2831ec) — hotheaded lean: actor equidistant from a_tanky (str=10) + z_glass (str=4); picks z_glass (lower HP)
+//   scripted-join-seed5              (7af6bcae) — A reinforcement joins at activation 3; turns B-win into A-win
+//   scripted-retreat-seed7           (63b649df) — b1 ordered to retreat E at activation 2; crosses width-7 grid, takes hits, exits retreated
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {

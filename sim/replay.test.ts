@@ -88,12 +88,13 @@ describe('runScriptedFight', () => {
   });
 
   it('applies a retreat at the stamped activation — unit exits with retreated flag', () => {
-    // b1 is ordered to retreat to 'E' edge (x=4) at activation 2
+    // width-7 grid: b1(agi=6) starts at x=1 and must traverse right to reach the E edge (x=6).
+    // Without retreat b1 would fight a1 normally; with retreat it flees and exits as a retreated survivor.
     const retreatSetup = {
-      grid: { width: 5, height: 1, blocked: [] },
+      grid: { width: 7, height: 1, blocked: [] },
       units: [
         { id: 'a1', side: 'A' as const, attrs: { str: 5, agi: 5, int: 1, lck: 1 }, attackKind: 'melee' as const, priority: 5, pos: { x: 0, y: 0 } },
-        { id: 'b1', side: 'B' as const, attrs: { str: 3, agi: 3, int: 1, lck: 1 }, attackKind: 'melee' as const, priority: 5, pos: { x: 4, y: 0 } },
+        { id: 'b1', side: 'B' as const, attrs: { str: 3, agi: 6, int: 1, lck: 1 }, attackKind: 'melee' as const, priority: 5, pos: { x: 1, y: 0 } },
       ],
     };
     const bundle: ScriptedFightBundle = {
@@ -106,6 +107,9 @@ describe('runScriptedFight', () => {
     expect(r.endReason).toBeDefined();
     expect(r.ticks).toBeGreaterThan(0);
     expect(typeof r.hash).toBe('string');
+    // The ordered-to-retreat unit must appear as a retreated survivor.
+    // This assertion fails if orderRetreat is ignored: b1 would be a normal survivor or casualty (no retreated flag).
+    expect(r.survivors.find(s => s.id === 'b1')?.retreated).toBe(true);
   });
 
   it('join at activation 0 applies before first step', () => {
