@@ -1,6 +1,7 @@
-// Canonical replay fixture. expectedHash is the V8 golden (sim/tile-fight
-// golden 86e238c1) for the two-channel combat model (hit → mitigation → crit);
-// the parity harness requires goja to reproduce it exactly.
+// Replay parity fixtures. expectedHash is each fixture's V8 golden; the parity
+// harness requires goja to reproduce every one exactly. Current set:
+//   canonical-baseSetup-seed42 (86e238c1) — all-melee two-channel combat
+//   ranged-wall-seed42         (1123ceff) — ranged range + terrain line-of-sight
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {
