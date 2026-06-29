@@ -138,6 +138,24 @@ describe('effectiveDerived', () => {
     expect(effectiveDerived(unit, makeCtx(600, [unit])).atk).toBe(24);   // t=600 → capped 120%
   });
 
+  it('slowStarter: physDef + magicResist also scale (str=6,agi=6,int=5,lck=1)', () => {
+    // attrs str=6,agi=6,int=5,lck=1 → melee atk=20, physDef=6, magicResist=5
+    // t=0:   factorBp=8000  → atk=16, physDef=floor(6*8000/10000)=4,  magicResist=floor(5*8000/10000)=4
+    // t=300: factorBp=12000 → atk=24, physDef=floor(6*12000/10000)=7, magicResist=floor(5*12000/10000)=6
+    const attrs = { str: 6, agi: 6, int: 5, lck: 1 };
+    const unit = makeUnit('ss2', 'A', 0, 0, ['slowStarter'], attrs);
+
+    const eff0 = effectiveDerived(unit, makeCtx(0, [unit]));
+    expect(eff0.atk).toBe(16);
+    expect(eff0.physDef).toBe(4);
+    expect(eff0.magicResist).toBe(4);
+
+    const eff300 = effectiveDerived(unit, makeCtx(300, [unit]));
+    expect(eff300.atk).toBe(24);
+    expect(eff300.physDef).toBe(7);
+    expect(eff300.magicResist).toBe(6);
+  });
+
   it('bloodthirsty: +4 atk per kill', () => {
     // attrs str=5,agi=5,int=1,lck=1 → base atk17
     const attrs = { str: 5, agi: 5, int: 1, lck: 1 };
@@ -186,5 +204,16 @@ describe('effectiveDerived', () => {
     const effD7 = effectiveDerived(unitD7, makeCtx(0, [unitD7, leaderD7]));
     expect(effD7.atk).toBe(15);
     expect(effD7.physDef).toBe(5);
+  });
+
+  it('loyal: no-leader (solo unit) → proxyLeader returns null → atk unchanged', () => {
+    // attrs str=6,agi=4,int=1,lck=1 → melee atk=18, physDef=6
+    // Unit is the only living unit on side A → proxyLeader returns null → null-guard → no scaling
+    const attrs = { str: 6, agi: 4, int: 1, lck: 1 };
+    const soloLoyal = makeUnit('lo', 'A', 0, 0, ['loyal'], attrs);
+    const ctx = makeCtx(0, [soloLoyal]); // no ally on same side
+    const eff = effectiveDerived(soloLoyal, ctx);
+    expect(eff.atk).toBe(18);      // unchanged (base)
+    expect(eff.physDef).toBe(6);   // unchanged (base)
   });
 });

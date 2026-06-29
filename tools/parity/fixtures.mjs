@@ -3,7 +3,7 @@
 //   canonical-baseSetup-seed42 (86e238c1) — all-melee two-channel combat
 //   ranged-wall-seed42         (1123ceff) — ranged range + terrain line-of-sight
 //   skill-cast-seed11          (b621e99d) — ranged+heavyStrike Mana charge + cast vs tanky/weak target
-//   reckless-duel-seed7        (PENDING)  — reckless melee unit vs plain unit; atk ramps as damaged
+//   reckless-duel-seed7        (c28a905a) — reckless melee unit vs plain unit; atk ramps as damaged
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {
