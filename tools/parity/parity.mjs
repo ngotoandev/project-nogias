@@ -1,5 +1,5 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { execFileSync, execSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { hashInV8 } from './run-node.mjs';
@@ -10,14 +10,14 @@ const root = resolve(here, '..', '..');
 const bundlePath = resolve(root, 'dist', 'sim-bundle.js');
 const runnerDir = resolve(root, 'tools', 'parity', 'goja-runner');
 
-// Ensure the bundle exists (build on demand).
-if (!existsSync(bundlePath)) {
-  try {
-    execFileSync('npm', ['run', 'bundle'], { cwd: root, stdio: 'inherit', shell: true });
-  } catch {
-    console.error('Bundle build failed.');
-    process.exit(1);
-  }
+// Always rebuild so a stale bundle can never produce a misleading PASS.
+// execSync (command string) is the correct shell API here — execFileSync with
+// an args array + shell:true is deprecated (DEP0190) and noisy on every run.
+try {
+  execSync('npm run bundle', { cwd: root, stdio: 'inherit' });
+} catch {
+  console.error('Bundle build failed.');
+  process.exit(1);
 }
 const bundleSource = readFileSync(bundlePath, 'utf8');
 
@@ -39,14 +39,19 @@ if (goProbe.status !== 0) {
   console.log('Go absent — skipping goja parity (CI enforces it).');
 } else {
   for (const f of FIXTURES) {
-    const out = execFileSync('go', ['run', '.', bundlePath], {
-      cwd: runnerDir,
-      input: JSON.stringify(f.bundle),
-      encoding: 'utf8',
-    });
-    const goja = JSON.parse(out).hash;
-    if (goja !== f.expectedHash) {
-      console.error(`goja mismatch [${f.name}]: ${goja} !== ${f.expectedHash}`);
+    try {
+      const out = execFileSync('go', ['run', '.', bundlePath], {
+        cwd: runnerDir,
+        input: JSON.stringify(f.bundle),
+        encoding: 'utf8',
+      });
+      const goja = JSON.parse(out).hash;
+      if (goja !== f.expectedHash) {
+        console.error(`goja mismatch [${f.name}]: ${goja} !== ${f.expectedHash}`);
+        failed = true;
+      }
+    } catch (err) {
+      console.error(`goja error [${f.name}]: ${err.message ?? err}`);
       failed = true;
     }
   }

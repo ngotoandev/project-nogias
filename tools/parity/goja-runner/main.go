@@ -32,6 +32,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "load bundle:", err)
 		os.Exit(1)
 	}
+	if v := vm.Get("Sim"); v == nil || goja.IsUndefined(v) {
+		fmt.Fprintln(os.Stderr, "bundle did not define global Sim")
+		os.Exit(1)
+	}
 	if err := vm.Set("__bundleJson", string(bundleJSON)); err != nil {
 		fmt.Fprintln(os.Stderr, "set input:", err)
 		os.Exit(1)
