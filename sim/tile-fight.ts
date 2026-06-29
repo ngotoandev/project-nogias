@@ -5,19 +5,10 @@ import { makeGrid, chebyshev, stepToward, hasLineOfSight } from './grid';
 import { nextActor, TEMPO_THRESHOLD } from './initiative';
 import { hashFight } from './hash';
 import { hitBp, mitigatedDamage, applyCrit, manaGainOnHit, manaGainOnTaken, heavyStrikeDamage } from './combat';
+import { decideTurn, decideAction } from './decide';
 import { HEAVY_STRIKE_COST } from '../shared/config';
 
 const MAX_TICKS = 100_000; // safety cap against stalemates
-
-function chooseTarget(actor: Unit, units: Unit[]): Unit | null {
-  const enemies = units.filter((u) => u.hp > 0 && u.side !== actor.side);
-  if (enemies.length === 0) return null;
-  enemies.sort((x, y) =>
-    chebyshev(actor.pos, x.pos) - chebyshev(actor.pos, y.pos) ||
-    y.priority - x.priority ||
-    (x.id < y.id ? -1 : 1));
-  return enemies[0]!;
-}
 
 export function runTileFight(setup: FightSetup, seed: number): FightResult {
   const rng = makeRng(seed);
@@ -60,8 +51,10 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
     const actor = na.actor;
     actor.gauge -= TEMPO_THRESHOLD;
 
-    const target = chooseTarget(actor, units);
-    if (target === null) continue;
+    const ctx = { totalTicks, units, grid };
+    const intent = decideTurn(actor, ctx);
+    if (intent.targetId === null) continue;
+    const target = units.find((x) => x.id === intent.targetId)!;
 
     // Move up to moveRange steps toward the target, stopping once in range.
     for (let step = 0; step < actor.derived.moveRange; step++) {
@@ -78,7 +71,8 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
     if (inAttackPosition(actor, target)) {
       const channel = actor.derived.channel;
       const def = channel === 'physical' ? target.derived.physDef : target.derived.magicResist;
-      if (actor.skill === 'heavyStrike' && actor.mana >= HEAVY_STRIKE_COST) {
+      const action = decideAction(actor, target, ctx);
+      if (action === 'cast') {
         // Cast: spend Mana, guaranteed hit, amplified damage, then the normal crit roll.
         actor.mana -= HEAVY_STRIKE_COST;
         let damage = heavyStrikeDamage(actor.derived.atk, def);
