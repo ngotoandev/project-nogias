@@ -51,3 +51,16 @@ export interface FightResult {
   events: FightEvent[];
   hash: string;
 }
+
+export interface ReplayBundle {
+  version: 1;          // envelope version; later plans add a `commands` stream
+  setup: FightSetup;
+  seed: number;
+}
+
+export interface ReplayResult {
+  hash: string;        // hashFight of the final state — the parity target
+  winner: Side | 'draw';
+  ticks: number;
+  endReason: EndReason;
+}
