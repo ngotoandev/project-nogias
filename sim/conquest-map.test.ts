@@ -196,6 +196,43 @@ it('BFS selects shortest owned path based on N,S,E,W expansion order', () => {
   expect(a.route).toEqual(['t4', 't2']);
 });
 
+it('BFS selects the genuinely shorter path when two launch tiles are at different distances', () => {
+  // Layout:
+  //   t0(player) -E→ lb(player) -E→ tE(enemy,garrison)
+  //   t0(player) -S→ t1(player) -E→ la(player) -N→ tE(enemy)
+  //
+  // lb is adjacent to tE (launch tile, distance 1 from t0).
+  // la is adjacent to tE too (launch tile, distance 2 from t0: t0→t1→la).
+  //
+  // BFS from t0 expands N,S,E,W. t0 has S=t1 and E=lb.
+  // Queue after expanding t0 (N,S,E,W order): [t1, lb] (S before E).
+  // BUT lb is at distance 1 (found via E from t0) and t1 is at distance 1 too.
+  // When we expand t1 → la: la is a launch tile at distance 2.
+  // When we expand lb: lb is itself a launch tile at distance 1 → found first.
+  //
+  // Critically: if BFS were broken and returned a longer path, it would pick la (distance 2)
+  // instead of lb (distance 1). This test would fail.
+  // The assertion pins the distance-1 route ['lb', 'tE'] over the distance-2 route ['t1','la','tE'].
+  const u = (id: string) => ({ id, side: 'B' as const, attackKind: 'melee' as const, attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } });
+  const mapSetup: MapSetup = {
+    tiles: [
+      { id: 't0', type: 'start',  owner: 'player', neighbors: { S: 't1', E: 'lb' }, garrison: [] },
+      { id: 't1', type: 'cache',  owner: 'player', neighbors: { N: 't0', E: 'la' }, garrison: [] },
+      { id: 'lb', type: 'cache',  owner: 'player', neighbors: { W: 't0', E: 'tE' }, garrison: [] },
+      { id: 'la', type: 'cache',  owner: 'player', neighbors: { W: 't1', N: 'tE' }, garrison: [] },
+      { id: 'tE', type: 'enemy',  owner: 'enemy',  neighbors: { W: 'lb', S: 'la' }, garrison: [u('g1')] },
+    ],
+    armies: [{ id: 'a1', units: [{ id: 'a1u', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }], tile: 't0' }],
+  };
+  const s = initConquest(mapSetup);
+  advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 'tE' }]);
+  const a = s.armies.find(x => x.id === 'a1')!;
+  expect(a.state).toBe('travelling');
+  // BFS must pick lb (distance 1 from t0) over la (distance 2: t0→t1→la).
+  // Route: drop t0, keep lb, append tE → ['lb', 'tE'].
+  expect(a.route).toEqual(['lb', 'tE']);
+});
+
 it('dispatch with gate: validates the launch tile matches the specified gate', () => {
   const s = initConquest(setupWithT1Owned());
   // t2's neighbors: W=t1. Gate 'W' means launch tile = t1, which is player-owned → valid.

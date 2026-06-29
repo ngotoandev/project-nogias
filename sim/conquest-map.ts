@@ -94,7 +94,7 @@ function bfsRoute(state: MapState, fromId: string, toTile: MapTile, gate?: MapEd
 }
 
 function idOf(c: MapCommand): string {
-  return c.t === 'dispatch' ? c.armyId : c.armyId;
+  return c.armyId;
 }
 
 function applyDispatch(
