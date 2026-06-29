@@ -11,10 +11,29 @@ const baseSetup: FightSetup = {
 };
 
 describe('runTileFight', () => {
-  it('resolves to a single winning side', () => {
+  it('resolves with an end event and a consistent endReason', () => {
     const r = runTileFight(baseSetup, 42);
-    expect(['A', 'B', 'draw']).toContain(r.winner);
     expect(r.events.at(-1)).toMatchObject({ t: 'end' });
+    if (r.winner === 'A' || r.winner === 'B') {
+      expect(r.endReason).toBe('decisive');
+    } else {
+      expect(['wipe', 'timeout']).toContain(r.endReason);
+    }
+  });
+
+  it('reports a timeout (not a wipe) when units cannot reach each other', () => {
+    const walled: FightSetup = {
+      grid: { width: 3, height: 1, blocked: [{ x: 1, y: 0 }] },
+      units: [
+        { id: 'a1', side: 'A', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 0, pos: { x: 0, y: 0 } },
+        { id: 'b1', side: 'B', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 0, pos: { x: 2, y: 0 } },
+      ],
+    };
+    const r = runTileFight(walled, 7);
+    expect(r.winner).toBe('draw');
+    expect(r.endReason).toBe('timeout');
+    expect(r.ticks).toBeGreaterThan(100_000);
+    expect(r.events.at(-1)).toMatchObject({ t: 'end', winner: 'draw', endReason: 'timeout' });
   });
 
   it('a far stronger squad wins', () => {

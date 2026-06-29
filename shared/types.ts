@@ -35,15 +35,18 @@ export interface GridSpec { width: number; height: number; blocked: Cell[]; }
 
 export interface FightSetup { grid: GridSpec; units: UnitSpec[]; }
 
+export type EndReason = 'decisive' | 'wipe' | 'timeout';
+
 export type FightEvent =
   | { t: 'move'; id: string; from: Cell; to: Cell }
   | { t: 'attack'; id: string; target: string; damage: number; lethal: boolean }
   | { t: 'death'; id: string }
-  | { t: 'end'; winner: Side | 'draw'; ticks: number };
+  | { t: 'end'; winner: Side | 'draw'; ticks: number; endReason: EndReason };
 
 export interface FightResult {
   winner: Side | 'draw';
   ticks: number;
+  endReason: EndReason;
   survivors: { id: string; side: Side; hp: number }[];
   events: FightEvent[];
   hash: string;

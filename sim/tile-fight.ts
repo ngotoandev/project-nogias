@@ -1,4 +1,4 @@
-import type { Cell, FightEvent, FightResult, FightSetup, Side, Unit } from '../shared/types';
+import type { Cell, EndReason, FightEvent, FightResult, FightSetup, Side, Unit } from '../shared/types';
 import { makeRng } from '../shared/rng';
 import { deriveStats } from './stats';
 import { makeGrid, chebyshev, stepToward } from './grid';
@@ -80,11 +80,16 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
 
   const fin = sidesAlive();
   const winner: Side | 'draw' = fin.a && !fin.b ? 'A' : fin.b && !fin.a ? 'B' : 'draw';
-  events.push({ t: 'end', winner, ticks: totalTicks });
+  // A draw splits by final state: both sides eliminated = mutual wipe; both
+  // still alive = the loop stopped without a decision (MAX_TICKS, or a tempo
+  // deadlock where nextActor cannot progress).
+  const endReason: EndReason = winner !== 'draw' ? 'decisive' : fin.a && fin.b ? 'timeout' : 'wipe';
+  events.push({ t: 'end', winner, ticks: totalTicks, endReason });
 
   return {
     winner,
     ticks: totalTicks,
+    endReason,
     survivors: units.filter((u) => u.hp > 0).map((u) => ({ id: u.id, side: u.side, hp: u.hp })),
     events,
     hash: hashFight(units, totalTicks),
