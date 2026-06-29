@@ -269,57 +269,66 @@ describe('runTileFight stupid trait', () => {
     expect(first.target).toBe('tg');
   });
 
-  it('a misfire emits no damage (no attack event from st on that turn)', () => {
+  it('a misfire consumes the turn — no attack or miss from st in the same activation', () => {
     const r = runTileFight(stupidSetup, 80);
     const misfires = r.events.filter((e) => e.t === 'misfire' && e.id === 'st');
     expect(misfires.length).toBeGreaterThan(0);
-    // If the very first action of 'st' is a misfire, the first event from 'st' that is
-    // an attack should NOT immediately follow the first misfire at the same sequence position.
-    // Simplest check: total attacks from 'st' < total actions-in-range from 'st'.
-    // Actually: verify a misfire event exists and the fight still concludes (no crash).
-    expect(r.events.at(-1)?.t).toBe('end');
+    // Verify: immediately after each misfire from 'st', there is no attack/miss from 'st'
+    // before a different unit acts. This fails if the production `continue` is removed,
+    // because then the code falls through to the normal hit-roll path and emits attack/miss.
+    for (const mf of misfires) {
+      const idx = r.events.indexOf(mf);
+      // Look at the event(s) that follow the misfire in the same stream
+      // until we see an event from a unit OTHER than 'st' (or end-of-stream).
+      for (let i = idx + 1; i < r.events.length; i++) {
+        const ev = r.events[i]!;
+        // As soon as another unit acts (or the fight ends), stop.
+        if (ev.t === 'end') break;
+        if (ev.t !== 'misfire' && 'id' in ev && ev.id !== 'st') break;
+        // If we see an attack or miss from 'st' before another unit acts, the continue is gone.
+        if ((ev.t === 'attack' || ev.t === 'miss') && 'id' in ev && ev.id === 'st') {
+          throw new Error(`misfire at index ${idx} was followed by ${ev.t} from st at index ${i} — continue must be missing`);
+        }
+      }
+    }
   });
 
-  it('stupid unit never emits misfire on a cast (heavy strike)', () => {
-    // A unit with stupid + heavyStrike skill that has enough mana to cast.
-    // We'll use a setup where the unit accumulates mana first, then casts.
-    // The point: when action='cast', the Stupid gate must NOT be drawn → no misfire event.
+  it('stupid unit misfires basics but casts are immune (seed=1 produces BOTH)', () => {
+    // seed=1 with stupid+heavyStrike: the unit misfires at least one basic AND still lands
+    // a heavyStrike cast. This proves the `action==='basic'` guard in the Stupid gate:
+    // misfires happen on basic turns; the cast turn goes through unimpeded.
+    // If the guard were removed (Stupid could fire on casts), the cast turn would sometimes
+    // misfire instead of attacking, and ≥1 heavyStrike event would disappear.
     const castSetup: FightSetup = {
       grid: { width: 2, height: 1, blocked: [] },
       units: [
-        // High INT for fast mana charge, high AGI to act first, skill=heavyStrike
         { id: 'sc', side: 'A', attackKind: 'ranged', skill: 'heavyStrike', traits: ['stupid'],
           attrs: { str: 9, agi: 9, int: 9, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
         { id: 'td', side: 'B', attackKind: 'melee', attrs: { str: 20, agi: 1, int: 1, lck: 1 }, priority: 0, pos: { x: 1, y: 0 } },
       ],
     };
-    const r = runTileFight(castSetup, 11);
-    // The unit DOES cast (skill fires)
-    expect(r.events.some((e) => e.t === 'attack' && e.id === 'sc' && e.skill === 'heavyStrike')).toBe(true);
-    // The cast attack events from 'sc' are never preceded by a misfire on a cast-turn.
-    // Simpler: no misfire event has id='sc' AND the next event also being an attack with skill tag
-    // (misfire means the action is consumed, so no attack on the same turn).
-    // The invariant: misfire events from 'sc' exist only on basic-attack turns, never on cast turns.
-    // Since we verify cast fires, the absence of misfire-tagged-to-cast is implicit:
-    // a cast turn cannot produce a misfire event (misfire is only emitted in the 'basic' branch).
-    const castMisfires = r.events.filter((e) => e.t === 'misfire' && e.id === 'sc');
-    // This could be 0 (seed 11 might not trigger stupid on any basic), but crucially:
-    // verify the cast event exists (proving cast was reached, not aborted by misfire).
-    // If any cast misfire occurred, the test would have caught it by the attack assertion failing.
-    // We'll assert: for each misfire by 'sc', the previous attack by 'sc' was NOT a heavyStrike.
-    for (const mf of castMisfires) {
-      if (mf.t !== 'misfire') continue;
-      // Find position in events
+    const r = runTileFight(castSetup, 1);
+    // Both must be present in the same run — proving basics misfire AND the cast still fires.
+    const misfires = r.events.filter((e) => e.t === 'misfire' && e.id === 'sc');
+    const casts = r.events.filter((e) => e.t === 'attack' && e.id === 'sc' && e.skill === 'heavyStrike');
+    expect(misfires.length).toBeGreaterThan(0); // at least one basic misfired
+    expect(casts.length).toBeGreaterThan(0);    // cast was NOT blocked by Stupid — cast is immune
+    // Additionally: no misfire event from 'sc' is immediately followed by a heavyStrike attack.
+    // (A cast turn cannot emit a misfire; if it did the cast attack would never appear.)
+    for (const mf of misfires) {
       const idx = r.events.indexOf(mf);
-      // The misfire must not be a cast: verify that the fight still produced at least one cast
-      // (proving the cast path was taken without interference from stupid on cast turns).
-      // The key assertion is already above: a cast event exists.
-      expect(idx).toBeGreaterThanOrEqual(0);
+      // The event immediately after a misfire from sc (if any) must not be a heavyStrike attack.
+      // (Because on a misfire turn the action is consumed; no cast can follow in that same turn.)
+      for (let i = idx + 1; i < r.events.length; i++) {
+        const ev = r.events[i]!;
+        if (ev.t === 'end') break;
+        if ('id' in ev && ev.id !== 'sc') break;
+        if (ev.t === 'attack' && ev.skill === 'heavyStrike') {
+          throw new Error(`misfire at index ${idx} was followed by a heavyStrike cast at index ${i} — impossible if Stupid gate fires before the action decision`);
+        }
+        break; // only inspect the very next event from sc
+      }
     }
-    // Re-state the key invariant explicitly:
-    // There must be NO misfire event on a cast turn — only on basic turns.
-    // We can't distinguish turns from events alone, but we know the fight must produce a cast.
-    // That cast existing is evidence that stupid didn't misfire during a cast.
   });
 });
 

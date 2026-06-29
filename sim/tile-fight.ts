@@ -128,7 +128,7 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
         if (rng.intInRange(0, 9999) < STUPID_MISFIRE_BP) {
           events.push({ t: 'misfire', id: actor.id, target: actualTarget.id });
           // Wasted action: no damage, no mana, no hit/crit draw.
-          continue; // eslint-disable-line no-continue
+          continue;
         }
         // Fall through to normal basic-attack resolution below.
       }
