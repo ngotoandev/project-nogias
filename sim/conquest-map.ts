@@ -93,11 +93,48 @@ function bfsRoute(state: MapState, fromId: string, toTile: MapTile, gate?: MapEd
   return null;
 }
 
+function ownedNeighborIds(state: MapState, tile: MapTile): string[] {
+  const result: string[] = [];
+  for (const edge of EDGES) {
+    const neighborId = tile.neighbors[edge];
+    if (!neighborId) continue;
+    const neighbor = tileById(state, neighborId);
+    if (neighbor && neighbor.owner === 'player') result.push(neighborId);
+  }
+  return result;
+}
+
+function applyRetreat(state: MapState, armyId: string): void {
+  const army = state.armies.find((a) => a.id === armyId);
+  if (!army || (army.state !== 'travelling' && army.state !== 'contested')) {
+    state.events.push({ t: 'rejected', armyId, reason: 'not-recallable' });
+    return;
+  }
+  const wasTarget = army.target;
+  army.target = undefined; // free the slot immediately
+  if (wasTarget) state.events.push({ t: 'slotFreed', tile: wasTarget, armyId });
+  const cur = tileById(state, army.tile)!;
+  if (cur.owner === 'player') {
+    // Already on owned soil → settle immediately
+    army.state = 'garrisoned';
+    army.route = undefined;
+    army.travelGauge = 0;
+    state.events.push({ t: 'retreated', armyId, to: cur.id });
+  } else {
+    // On an enemy tile (contested) → hop back to first owned neighbor (N,S,E,W order)
+    const back = ownedNeighborIds(state, cur)[0];
+    army.state = 'retreating';
+    army.route = back ? [back] : [];
+    army.travelGauge = 0;
+  }
+}
+
 function resolveArrival(state: MapState, army: Army): void {
   if (army.state === 'retreating') {
     army.state = 'garrisoned';
     army.target = undefined;
-    return; // Task 4 handles retreat command; here just land
+    state.events.push({ t: 'retreated', armyId: army.id, to: army.tile });
+    return;
   }
   const tile = tileById(state, army.tile)!;
   if (tile.owner === 'player' || tile.garrison.length === 0) {
@@ -167,7 +204,7 @@ export function advance(state: MapState, commands: MapCommand[]): MapState {
 
   for (const c of sorted) {
     if (c.t === 'dispatch') applyDispatch(state, c);
-    // retreat → Task 4
+    if (c.t === 'retreat') applyRetreat(state, c.armyId);
   }
 
   // Travel phase: only armies that were already travelling/retreating BEFORE this tick's commands.

@@ -310,6 +310,77 @@ it('arriving at an UNDEFENDED tile captures it (owner→player, garrisoned, slot
   expect(committedCount(s, 'tX')).toBe(0);
 });
 
+// ── Task 4: Retreat command ───────────────────────────────────────────────────
+
+// t0(player) — t1(player) — t2(enemy, garrison): same as setupT1OwnedFastArmy
+// but we need the army to reach t2 and be contested before issuing a retreat.
+// Army unit agi=10 → tempo 20 → hop every 5 ticks.
+// Route: t0→dispatch→route=['t1','t2']. tick5 → hop to t1; tick10 → arrive at t2 → contested.
+it('retreat a contested army: frees its slot, returns it to owned territory, ends garrisoned with retreated event', () => {
+  const s = initConquest(setupT1OwnedFastArmy());
+  // Dispatch a1 to t2 (defended); after 10 ticks it becomes contested
+  advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]);
+  for (let i = 0; i < 9; i++) advance(s, []);
+  // At tick 10 it arrives at t2 → contested
+  advance(s, []);
+  const a = () => s.armies.find(x => x.id === 'a1')!;
+  expect(a().state).toBe('contested');
+  expect(a().tile).toBe('t2');
+
+  // Now retreat a1 from contested t2
+  advance(s, [{ t: 'retreat', armyId: 'a1' }]);
+  // Slot must be freed immediately: committedCount === 0 and slotFreed event fired
+  expect(committedCount(s, 't2')).toBe(0);
+  expect(a().target).toBeUndefined();
+  expect(s.events.some(e => e.t === 'slotFreed' && e.tile === 't2' && e.armyId === 'a1')).toBe(true);
+  // Army state should be 'retreating' with route back to an owned neighbor (t1 is W of t2 → owned)
+  expect(a().state).toBe('retreating');
+
+  // Advance until it returns: 1 hop (t2→t1) takes 5 more ticks
+  for (let i = 0; i < 4; i++) advance(s, []);
+  expect(a().tile).toBe('t2'); // not yet
+  advance(s, []); // 5th tick: hops t2→t1 and resolveArrival garrisons it
+  expect(a().tile).toBe('t1');
+  expect(a().state).toBe('garrisoned');
+  expect(a().target).toBeUndefined();
+  // retreated event should be emitted on arrival
+  expect(s.events.some(e => e.t === 'retreated' && e.armyId === 'a1' && e.to === 't1')).toBe(true);
+});
+
+it('retreat a travelling army: frees slot and settles garrisoned on its current owned tile', () => {
+  // setupT1OwnedFastArmy: route ['t1','t2']; after dispatch but before reaching t1 (within 5 ticks)
+  // army is at t0 (owned) in 'travelling' state.
+  const s = initConquest(setupT1OwnedFastArmy());
+  advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]);
+  const a = () => s.armies.find(x => x.id === 'a1')!;
+  // Advance a few ticks so army is still travelling at t0 (haven't hopped yet)
+  for (let i = 0; i < 3; i++) advance(s, []);
+  expect(a().state).toBe('travelling');
+  expect(a().tile).toBe('t0'); // still at owned t0
+
+  // Issue retreat: army is on owned tile t0 → settle immediately as garrisoned
+  advance(s, [{ t: 'retreat', armyId: 'a1' }]);
+  expect(a().state).toBe('garrisoned');
+  expect(a().tile).toBe('t0');
+  expect(a().target).toBeUndefined();
+  expect(a().route).toBeUndefined();
+  // slotFreed event fired (had target t2)
+  expect(s.events.some(e => e.t === 'slotFreed' && e.tile === 't2' && e.armyId === 'a1')).toBe(true);
+  // retreated event fired immediately (settled on owned t0)
+  expect(s.events.some(e => e.t === 'retreated' && e.armyId === 'a1' && e.to === 't0')).toBe(true);
+  // Slot freed: committedCount on t2 === 0
+  expect(committedCount(s, 't2')).toBe(0);
+});
+
+it('retreat a garrisoned army: rejected with not-recallable', () => {
+  const s = initConquest(setupT1OwnedFastArmy());
+  const a = () => s.armies.find(x => x.id === 'a1')!;
+  expect(a().state).toBe('garrisoned');
+  advance(s, [{ t: 'retreat', armyId: 'a1' }]);
+  expect(a().state).toBe('garrisoned'); // unchanged
+  expect(s.events.some(e => e.t === 'rejected' && e.armyId === 'a1' && 'reason' in e && e.reason === 'not-recallable')).toBe(true);
+});
+
 it('arriving at a DEFENDED tile becomes contested (no resolution, slot held, contested event)', () => {
   // setupT1OwnedFastArmy: t2 has garrison → defended.
   // Route ['t1','t2'] = 2 hops. First hop at tick 5 (to t1), second at tick 10 (to t2 = arrival).
