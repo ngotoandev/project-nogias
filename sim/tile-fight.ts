@@ -1,12 +1,12 @@
 import type { Cell, EndReason, FightEvent, FightResult, FightSetup, Side, Unit } from '../shared/types';
 import { makeRng } from '../shared/rng';
 import { deriveStats, effectiveDerived } from './stats';
-import { makeGrid, chebyshev, stepToward, hasLineOfSight } from './grid';
+import { makeGrid, chebyshev, stepToward, stepAway, hasLineOfSight } from './grid';
 import { nextActor, TEMPO_THRESHOLD } from './initiative';
 import { hashFight } from './hash';
 import { hitBp, mitigatedDamage, applyCrit, manaGainOnHit, manaGainOnTaken, heavyStrikeDamage } from './combat';
 import { decideTurn, decideAction } from './decide';
-import { HEAVY_STRIKE_COST } from '../shared/config';
+import { HEAVY_STRIKE_COST, COWARD_FLEE_BP, COWARD_FLEE_MOVE_BONUS } from '../shared/config';
 
 const MAX_TICKS = 100_000; // safety cap against stalemates
 
@@ -52,16 +52,43 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
     const actor = na.actor;
     actor.gauge -= TEMPO_THRESHOLD;
 
+    // Coward flee clock: begin while low-HP, clear when healthy. Never reset
+    // while low (so totalTicks - fleeingSinceTick crosses RALLY_TICKS → permanent rally).
+    if (actor.traits.includes('coward') && !actor.traits.includes('bloodthirsty')) {
+      const lowHp = actor.hp * 10000 <= COWARD_FLEE_BP * actor.derived.maxHp;
+      if (!lowHp) actor.fleeingSinceTick = -1;
+      else if (actor.fleeingSinceTick < 0) actor.fleeingSinceTick = totalTicks;
+    }
+
     const ctx = { totalTicks, units, grid };
     const intent = decideTurn(actor, ctx);
     if (intent.targetId === null) continue;
     const target = units.find((x) => x.id === intent.targetId)!;
 
+    const canEnter = (c: Cell): boolean =>
+      grid.inBounds(c) && !grid.isBlocked(c) && !occupied(c, actor.id);
+
+    if (intent.move === 'flee') {
+      // Flee: step away from all living enemies; skip attack this turn.
+      const enemyPositions = units.filter((u) => u.hp > 0 && u.side !== actor.side).map((u) => u.pos);
+      const fleeSteps = actor.derived.moveRange + COWARD_FLEE_MOVE_BONUS;
+      for (let step = 0; step < fleeSteps; step++) {
+        const next = stepAway(actor.pos, enemyPositions, canEnter);
+        if (next.x === actor.pos.x && next.y === actor.pos.y) break; // stuck
+        events.push({ t: 'move', id: actor.id, from: { x: actor.pos.x, y: actor.pos.y }, to: { x: next.x, y: next.y } });
+        actor.pos = next;
+      }
+      continue; // skip attack
+    }
+
     // Move up to moveRange steps toward the target, stopping once in range.
-    for (let step = 0; step < actor.derived.moveRange; step++) {
-      if (inAttackPosition(actor, target)) break;
-      const canEnter = (c: Cell): boolean =>
-        grid.inBounds(c) && !grid.isBlocked(c) && !occupied(c, actor.id);
+    const maxMoveSteps = actor.derived.moveRange;
+    for (let step = 0; step < maxMoveSteps; step++) {
+      // Charge: close to melee (chebyshev <= 1); otherwise stop at attackRange.
+      const inPosition = intent.charge
+        ? chebyshev(actor.pos, target.pos) <= 1
+        : inAttackPosition(actor, target);
+      if (inPosition) break;
       const next = stepToward(actor.pos, target.pos, canEnter);
       if (next.x === actor.pos.x && next.y === actor.pos.y) break; // stuck
       events.push({ t: 'move', id: actor.id, from: { x: actor.pos.x, y: actor.pos.y }, to: { x: next.x, y: next.y } });

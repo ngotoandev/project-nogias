@@ -170,6 +170,39 @@ describe('runTileFight', () => {
   });
 });
 
+describe('runTileFight trait behaviors', () => {
+  it('coward flees (emits moves away from enemy) when low-HP', () => {
+    const setup: FightSetup = {
+      grid: { width: 9, height: 1, blocked: [] },
+      units: [
+        { id: 'cw', side: 'A', attackKind: 'melee', traits: ['coward'], attrs: { str: 1, agi: 7, int: 1, lck: 1 }, priority: 5, pos: { x: 4, y: 0 } },
+        { id: 'br', side: 'B', attackKind: 'melee', attrs: { str: 9, agi: 6, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
+      ],
+    };
+    const r = runTileFight(setup, 3);
+    // The coward should flee (move right/away from the brute on the left) at some point
+    const cwMoves = r.events.filter((e) => e.t === 'move' && e.id === 'cw');
+    expect(cwMoves.length).toBeGreaterThan(0);
+    // The result is deterministic
+    expect(r.hash).toBe('43d92801');
+  });
+
+  it('headstrong ranged unit charges to melee (x:0 closing to x:7)', () => {
+    const setup: FightSetup = {
+      grid: { width: 8, height: 1, blocked: [] },
+      units: [
+        { id: 'hs', side: 'A', attackKind: 'ranged', traits: ['headstrong'], attrs: { str: 4, agi: 7, int: 3, lck: 2 }, priority: 5, pos: { x: 0, y: 0 } },
+        { id: 'tg', side: 'B', attackKind: 'melee', attrs: { str: 6, agi: 4, int: 1, lck: 2 }, priority: 5, pos: { x: 7, y: 0 } },
+      ],
+    };
+    const r = runTileFight(setup, 3);
+    // Headstrong sets charge=true → moves to melee range (1) instead of stopping at ranged range (4)
+    // so the ranged unit should close all the way in
+    expect(r.events.some((e) => e.t === 'move' && e.id === 'hs')).toBe(true);
+    expect(r.hash).toBe('db26f7c9');
+  });
+});
+
 describe('runTileFight golden hash', () => {
   it('matches the captured baseline hash (regenerate intentionally if logic changes)', () => {
     const r = runTileFight(baseSetup, 42);

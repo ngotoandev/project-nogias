@@ -4,6 +4,8 @@
 //   ranged-wall-seed42         (1123ceff) — ranged range + terrain line-of-sight
 //   skill-cast-seed11          (b621e99d) — ranged+heavyStrike Mana charge + cast vs tanky/weak target
 //   reckless-duel-seed7        (c28a905a) — reckless melee unit vs plain unit; atk ramps as damaged
+//   coward-kite-seed3          (43d92801) — coward melee kites away when low-HP; rally valve
+//   headstrong-charge-seed3    (db26f7c9) — headstrong ranged charges to melee instead of kiting
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {
@@ -65,5 +67,21 @@ export const FIXTURES = [
         ],
       },
     },
+  },
+  {
+    name: 'coward-kite-seed3',
+    expectedHash: '43d92801',
+    bundle: { version: 1, seed: 3, setup: {
+      grid: { width: 9, height: 1, blocked: [] }, units: [
+      { id: 'cw', side: 'A', attackKind: 'melee', traits: ['coward'], attrs: { str: 1, agi: 7, int: 1, lck: 1 }, priority: 5, pos: { x: 4, y: 0 } },
+      { id: 'br', side: 'B', attackKind: 'melee', attrs: { str: 9, agi: 6, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } } ] } },
+  },
+  {
+    name: 'headstrong-charge-seed3',
+    expectedHash: 'db26f7c9',
+    bundle: { version: 1, seed: 3, setup: {
+      grid: { width: 8, height: 1, blocked: [] }, units: [
+      { id: 'hs', side: 'A', attackKind: 'ranged', traits: ['headstrong'], attrs: { str: 4, agi: 7, int: 3, lck: 2 }, priority: 5, pos: { x: 0, y: 0 } },
+      { id: 'tg', side: 'B', attackKind: 'melee', attrs: { str: 6, agi: 4, int: 1, lck: 2 }, priority: 5, pos: { x: 7, y: 0 } } ] } },
   },
 ];

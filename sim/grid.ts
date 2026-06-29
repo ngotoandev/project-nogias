@@ -55,6 +55,31 @@ export function hasLineOfSight(from: Cell, to: Cell, isBlocked: (c: Cell) => boo
   return true;
 }
 
+// Best enterable 4-neighbor maximizing the minimum chebyshev distance to any
+// threat. Candidates are tried in a fixed order (E, W, N, S) and a neighbor
+// replaces the incumbent only on a STRICTLY greater score, so ties keep the
+// earlier candidate and `from` wins when nothing beats staying put — fully
+// deterministic, integer-only. `chebyshev` is defined in this module.
+export function stepAway(from: Cell, threats: Cell[], canEnter: (c: Cell) => boolean): Cell {
+  if (threats.length === 0) return from;
+  const minDist = (c: Cell): number => {
+    let m = Infinity;
+    for (const t of threats) m = Math.min(m, chebyshev(c, t));
+    return m;
+  };
+  const cand: Cell[] = [
+    { x: from.x + 1, y: from.y }, { x: from.x - 1, y: from.y },
+    { x: from.x, y: from.y + 1 }, { x: from.x, y: from.y - 1 },
+  ].filter(canEnter);
+  let best = from;
+  let bestScore = minDist(from);
+  for (const c of cand) {
+    const s = minDist(c);
+    if (s > bestScore) { best = c; bestScore = s; }
+  }
+  return best;
+}
+
 // One 4-directional step toward target: greater axis first, tie -> x.
 // Tries primary then secondary; returns `from` if neither is enterable.
 export function stepToward(from: Cell, target: Cell, canEnter: (c: Cell) => boolean): Cell {
