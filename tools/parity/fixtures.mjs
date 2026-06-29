@@ -8,6 +8,8 @@
 //   headstrong-charge-seed3     (db26f7c9) — headstrong ranged charges to melee instead of kiting
 //   stupid-misfire-seed80       (e7eaf7bb) — stupid melee unit misfires basic attack (seed=80 fires 10% gate)
 //   luckyfool-retarget-seed173  (068a1267) — luckyFool retargets to b2 (seed=173 fires 5% gate, idx=1)
+//   cleave-cluster-seed5        (57f7a0ff) — melee cleave unit reaches 2 adjacent enemies; casts Cleave hitting ≥2
+//   cleave-valve-seed7          (b028690d) — melee cleave unit vs lone tanky enemy; valve force-casts after VALVE_TICKS
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {
@@ -105,5 +107,30 @@ export const FIXTURES = [
       { id: 'lf', side: 'A', attackKind: 'melee', traits: ['luckyFool'], attrs: { str: 5, agi: 9, int: 1, lck: 1 }, priority: 5, pos: { x: 1, y: 0 } },
       { id: 'b1', side: 'B', attackKind: 'melee', attrs: { str: 3, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
       { id: 'b2', side: 'B', attackKind: 'melee', attrs: { str: 3, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 2, y: 0 } } ] } },
+  },
+  {
+    // seed=5: melee cleave unit at (2,1) with enemies at (1,1) and (3,1); charges basics then casts Cleave.
+    // Both enemies are within CLEAVE_RADIUS=1 (adjacent) with LoS. ≥2 attack{skill:'cleave'} events expected.
+    name: 'cleave-cluster-seed5',
+    expectedHash: '57f7a0ff',
+    bundle: { version: 1, seed: 5, setup: {
+      grid: { width: 5, height: 3, blocked: [] }, units: [
+      { id: 'cl', side: 'A', attackKind: 'melee', skill: 'cleave', attrs: { str: 9, agi: 9, int: 9, lck: 1 }, priority: 5, pos: { x: 2, y: 1 } },
+      { id: 'e1', side: 'B', attackKind: 'melee', attrs: { str: 15, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 1, y: 1 } },
+      { id: 'e2', side: 'B', attackKind: 'melee', attrs: { str: 15, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 3, y: 1 } } ] } },
+  },
+  {
+    // seed=7: melee cleave unit (str=20,agi=9,int=9) vs lone tanky magic enemy (str=100,int=1,agi=1).
+    // Only 1 enemy ever in CLEAVE_RADIUS=1, so castCondition stays false until VALVE_TICKS=250 elapses.
+    // Valve force-casts Cleave on the lone enemy. ≥1 attack{skill:'cleave'} event expected.
+    // Tuning: cl(atk=51,hp=120) hits tg for 9/hit; tg(magic,int=1) hits cl for 3/hit.
+    // 4 basics charge mana (19/hit → 76≥60). After ~21 ticks mana ready, valve fires at ~271 ticks.
+    // tg survives (~468 dmg < 520 HP); cl survives (~90 dmg < 120 HP).
+    name: 'cleave-valve-seed7',
+    expectedHash: 'b028690d',
+    bundle: { version: 1, seed: 7, setup: {
+      grid: { width: 2, height: 1, blocked: [] }, units: [
+      { id: 'cl', side: 'A', attackKind: 'melee', skill: 'cleave', attrs: { str: 20, agi: 9, int: 9, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
+      { id: 'tg', side: 'B', attackKind: 'magic', attrs: { str: 100, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 1, y: 0 } } ] } },
   },
 ];

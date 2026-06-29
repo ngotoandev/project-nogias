@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hitBp, mitigatedDamage, applyCrit, manaGainOnHit, manaGainOnTaken, heavyStrikeDamage } from './combat';
+import { hitBp, mitigatedDamage, applyCrit, manaGainOnHit, manaGainOnTaken, heavyStrikeDamage, cleaveDamage } from './combat';
 
 describe('hitBp', () => {
   it('is accuracy minus evasion, clamped to [1000, 10000]', () => {
@@ -66,5 +66,14 @@ describe('heavyStrikeDamage', () => {
   it('amplifies mitigated damage by the Heavy Strike multiplier', () => {
     expect(heavyStrikeDamage(17, 5)).toBe(25);  // mit(17,5)=14, x1.8 -> 25.2 -> 25
     expect(heavyStrikeDamage(25, 1)).toBe(43);  // mit(25,1)=24, x1.8 -> 43.2 -> 43
+  });
+});
+
+describe('cleaveDamage', () => {
+  it('amplifies mitigated damage by the Cleave multiplier (x1.20)', () => {
+    // node-verified: cleaveDamage(17,5)=16  (mit(17,5)=14, x1.2 -> 16.8 -> 16)
+    expect(cleaveDamage(17, 5)).toBe(16);
+    // node-verified: cleaveDamage(20,3)=20  (mit(20,3)=17, x1.2 -> 20.4 -> 20)
+    expect(cleaveDamage(20, 3)).toBe(20);
   });
 });

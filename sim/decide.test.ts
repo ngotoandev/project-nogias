@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { makeGrid, chebyshev } from './grid';
 import { deriveStats } from './stats';
-import { chooseTarget, decideTurn, decideAction } from './decide';
+import { chooseTarget, decideTurn, decideAction, cleaveTargets, castCondition } from './decide';
 import type { Unit } from '../shared/types';
 import type { AttackKind, SkillId } from '../shared/types';
-import { RALLY_TICKS, LEADER_RADIUS } from '../shared/config';
+import { RALLY_TICKS, LEADER_RADIUS, CLEAVE_COST, CLEAVE_MIN_TARGETS, VALVE_TICKS } from '../shared/config';
 
 function u(id: string, side: 'A' | 'B', x: number, y: number, opts: Partial<Unit> = {}): Unit {
   const attrs = opts.attrs ?? { str: 5, agi: 5, int: 1, lck: 1 };
@@ -94,5 +94,99 @@ describe('decideAction (baseline)', () => {
     expect(decideAction(a, b, ctx([a, b]))).toBe('basic');
     const a2 = u('a2', 'A', 0, 0);
     expect(decideAction(a2, b, ctx([a2, b]))).toBe('basic');
+  });
+});
+
+describe('cleaveTargets', () => {
+  it('returns living enemies within CLEAVE_RADIUS with LoS', () => {
+    // actor at (4,4); two enemies adjacent (chebyshev=1); one far (chebyshev=3)
+    const actor = u('a', 'A', 4, 4);
+    const near1 = u('e1', 'B', 4, 5);  // chebyshev=1
+    const near2 = u('e2', 'B', 5, 4);  // chebyshev=1
+    const far   = u('e3', 'B', 4, 7);  // chebyshev=3 — outside radius
+    const targets = cleaveTargets(actor, ctx([actor, near1, near2, far]));
+    expect(targets.map((t) => t.id).sort()).toEqual(['e1', 'e2']);
+  });
+
+  it('sorts by chebyshev asc, then priority desc, then id asc', () => {
+    const actor = u('a', 'A', 0, 0);
+    const e1 = u('e1', 'B', 1, 0, { priority: 5 }); // chebyshev=1
+    const e2 = u('e2', 'B', 0, 1, { priority: 9 }); // chebyshev=1, higher priority
+    const targets = cleaveTargets(actor, ctx([actor, e1, e2]));
+    // same chebyshev; e2 priority 9 > e1 priority 5 → e2 first
+    expect(targets[0]!.id).toBe('e2');
+    expect(targets[1]!.id).toBe('e1');
+  });
+
+  it('excludes dead enemies', () => {
+    const actor = u('a', 'A', 0, 0);
+    const dead  = u('d', 'B', 1, 0, { hp: 0 });
+    const alive = u('al', 'B', 0, 1);
+    const targets = cleaveTargets(actor, ctx([actor, dead, alive]));
+    expect(targets.every((t) => t.hp > 0)).toBe(true);
+    expect(targets.map((t) => t.id)).toEqual(['al']);
+  });
+
+  it('excludes allies', () => {
+    const actor = u('a', 'A', 0, 0);
+    const ally  = u('al', 'A', 1, 0);
+    const enemy = u('e1', 'B', 0, 1);
+    const targets = cleaveTargets(actor, ctx([actor, ally, enemy]));
+    expect(targets.map((t) => t.id)).toEqual(['e1']);
+  });
+});
+
+describe('castCondition', () => {
+  it('heavyStrike castCondition is always true', () => {
+    const a = u('a', 'A', 0, 0, { skill: 'heavyStrike' as SkillId });
+    const b = u('b', 'B', 5, 5);
+    expect(castCondition(a, b, ctx([a, b]))).toBe(true);
+  });
+
+  it('cleave castCondition is true when >= CLEAVE_MIN_TARGETS in radius', () => {
+    const actor = u('a', 'A', 4, 4, { skill: 'cleave' as SkillId });
+    const e1 = u('e1', 'B', 4, 5);
+    const e2 = u('e2', 'B', 5, 4);
+    const fake = u('fake', 'B', 1, 0); // distance 5 — outside radius
+    expect(castCondition(actor, e1, ctx([actor, e1, e2, fake]))).toBe(true);
+  });
+
+  it('cleave castCondition is false when < CLEAVE_MIN_TARGETS in radius', () => {
+    const actor = u('a', 'A', 4, 4, { skill: 'cleave' as SkillId });
+    const e1 = u('e1', 'B', 4, 5); // chebyshev=1
+    const far = u('far', 'B', 7, 7); // chebyshev=3 — out of radius
+    expect(castCondition(actor, e1, ctx([actor, e1, far]))).toBe(false);
+  });
+});
+
+describe('decideAction (cleave + valve)', () => {
+  it('cleave: casts when mana >= CLEAVE_COST and >= MIN_TARGETS in radius', () => {
+    // actor at (4,4) with 2 adjacent enemies
+    const actor = u('a', 'A', 4, 4, { skill: 'cleave' as SkillId, mana: CLEAVE_COST });
+    const e1 = u('e1', 'B', 4, 5);
+    const e2 = u('e2', 'B', 5, 4);
+    expect(decideAction(actor, e1, ctx([actor, e1, e2]))).toBe('cast');
+  });
+
+  it('cleave: basics when mana >= CLEAVE_COST but only 1 enemy in radius (not stalled)', () => {
+    const actor = u('a', 'A', 4, 4, { skill: 'cleave' as SkillId, mana: CLEAVE_COST });
+    const e1 = u('e1', 'B', 4, 5);
+    // stallSinceTick = -1 by default (fresh unit)
+    expect(decideAction(actor, e1, ctx([actor, e1]))).toBe('basic');
+  });
+
+  it('cleave: force-casts (valve) after stalling >= VALVE_TICKS', () => {
+    const actor = u('a', 'A', 4, 4, { skill: 'cleave' as SkillId, mana: CLEAVE_COST });
+    actor.stallSinceTick = 0;
+    const e1 = u('e1', 'B', 4, 5);
+    // totalTicks == VALVE_TICKS: threshold crossed
+    expect(decideAction(actor, e1, ctx([actor, e1], VALVE_TICKS))).toBe('cast');
+  });
+
+  it('cleave: still basics just before valve threshold', () => {
+    const actor = u('a', 'A', 4, 4, { skill: 'cleave' as SkillId, mana: CLEAVE_COST });
+    actor.stallSinceTick = 0;
+    const e1 = u('e1', 'B', 4, 5);
+    expect(decideAction(actor, e1, ctx([actor, e1], VALVE_TICKS - 1))).toBe('basic');
   });
 });

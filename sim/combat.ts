@@ -1,4 +1,4 @@
-import { MITIGATION_K, HIT_MIN_BP, HIT_MAX_BP, M_HIT, M_TAKEN, M_TAKEN_CAP, HEAVY_STRIKE_MULT, MANA_BASE_BP } from '../shared/config';
+import { MITIGATION_K, HIT_MIN_BP, HIT_MAX_BP, M_HIT, M_TAKEN, M_TAKEN_CAP, HEAVY_STRIKE_MULT, CLEAVE_MULT, MANA_BASE_BP } from '../shared/config';
 
 // Hit chance in basis points: accuracy minus evasion, clamped.
 export function hitBp(accuracyBp: number, evasionBp: number): number {
@@ -28,4 +28,9 @@ export function manaGainOnTaken(incoming: number, maxHp: number, manaChargeBp: n
 // Damage of a Heavy Strike: amplified mitigated damage (before the crit roll).
 export function heavyStrikeDamage(atk: number, def: number): number {
   return Math.floor((mitigatedDamage(atk, def) * HEAVY_STRIKE_MULT) / 100);
+}
+
+// Damage of a Cleave hit to one target: x1.20 mitigated damage (before the crit roll).
+export function cleaveDamage(atk: number, def: number): number {
+  return Math.floor((mitigatedDamage(atk, def) * CLEAVE_MULT) / 100);
 }

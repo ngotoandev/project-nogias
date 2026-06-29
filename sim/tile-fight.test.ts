@@ -239,6 +239,109 @@ describe('runTileFight golden hash', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Task 5: Cleave AoE + cast-conditions + pressure-valve
+// ---------------------------------------------------------------------------
+
+describe('runTileFight Cleave skill', () => {
+  // A cleave unit adjacent to 2 enemies: charges via basics then casts Cleave → two attack{skill:'cleave'} events in one activation.
+  // Grid: 3x3, cleaver at (1,1), enemies at (0,1) and (2,1) — both chebyshev=1.
+  // High STR for the cleaver + high mana charge rate; tanky enemies survive the initial basics.
+  it('cleave: hits >= 2 enemies in one activation (two attack{skill:cleave} events)', () => {
+    const setup: FightSetup = {
+      grid: { width: 5, height: 3, blocked: [] },
+      units: [
+        { id: 'cl', side: 'A', attackKind: 'melee', skill: 'cleave',
+          attrs: { str: 9, agi: 9, int: 9, lck: 1 }, priority: 5, pos: { x: 2, y: 1 } },
+        // Two adjacent tanky enemies on either side
+        { id: 'e1', side: 'B', attackKind: 'melee', attrs: { str: 15, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 1, y: 1 } },
+        { id: 'e2', side: 'B', attackKind: 'melee', attrs: { str: 15, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 3, y: 1 } },
+      ],
+    };
+    const r = runTileFight(setup, 5);
+    // Find an activation where 'cl' emits two consecutive attack{skill:'cleave'} events
+    const cleaveAttacks = r.events.filter((e) => e.t === 'attack' && e.id === 'cl' && e.skill === 'cleave');
+    expect(cleaveAttacks.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('cleave: attack events have skill=cleave and channel=physical', () => {
+    const setup: FightSetup = {
+      grid: { width: 5, height: 3, blocked: [] },
+      units: [
+        { id: 'cl', side: 'A', attackKind: 'melee', skill: 'cleave',
+          attrs: { str: 9, agi: 9, int: 9, lck: 1 }, priority: 5, pos: { x: 2, y: 1 } },
+        { id: 'e1', side: 'B', attackKind: 'melee', attrs: { str: 15, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 1, y: 1 } },
+        { id: 'e2', side: 'B', attackKind: 'melee', attrs: { str: 15, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 3, y: 1 } },
+      ],
+    };
+    const r = runTileFight(setup, 5);
+    const cleaveAttacks = r.events.filter((e) => e.t === 'attack' && e.id === 'cl' && e.skill === 'cleave');
+    expect(cleaveAttacks.length).toBeGreaterThan(0);
+    for (const ev of cleaveAttacks) {
+      if (ev.t !== 'attack') continue;
+      expect(ev.channel).toBe('physical');
+      expect(ev.skill).toBe('cleave');
+    }
+  });
+
+  it('cleave: does NOT apply lucky fool retarget (no single-target redirect on AoE)', () => {
+    // A luckyFool+cleave unit vs 2 adjacent enemies. The LuckyFool retarget should NOT fire.
+    // We verify there's no scenario where FEWER enemies are hit (still 2 attack events per cast).
+    const setup: FightSetup = {
+      grid: { width: 5, height: 3, blocked: [] },
+      units: [
+        { id: 'cl', side: 'A', attackKind: 'melee', skill: 'cleave', traits: ['luckyFool'],
+          attrs: { str: 9, agi: 9, int: 9, lck: 1 }, priority: 5, pos: { x: 2, y: 1 } },
+        { id: 'e1', side: 'B', attackKind: 'melee', attrs: { str: 15, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 1, y: 1 } },
+        { id: 'e2', side: 'B', attackKind: 'melee', attrs: { str: 15, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 3, y: 1 } },
+      ],
+    };
+    const r = runTileFight(setup, 173); // seed=173 fires luckyFool gate
+    const cleaveAttacks = r.events.filter((e) => e.t === 'attack' && e.id === 'cl' && e.skill === 'cleave');
+    expect(cleaveAttacks.length).toBeGreaterThanOrEqual(2);
+    // Both e1 and e2 should be targeted in cleave activations (AoE, not redirected)
+    const cleaveTargetIds = new Set(cleaveAttacks.map((e) => e.t === 'attack' ? e.target : ''));
+    expect(cleaveTargetIds.has('e1')).toBe(true);
+    expect(cleaveTargetIds.has('e2')).toBe(true);
+  });
+});
+
+describe('runTileFight Cleave valve', () => {
+  // A cleave unit vs a SINGLE tanky enemy: condition stays <2 throughout the fight,
+  // so after VALVE_TICKS the valve force-casts Cleave on the lone enemy.
+  //
+  // Tuning notes (verified analytically):
+  //   cl: str=20, agi=9, int=9, melee → atk=51, hp=120, magicResist=9, manaChargeBp=13600
+  //   tg: str=100, magic(int=1) → magicAtk=5, hp=520, physDef=100
+  //   cl hits tg for 9/hit; tg hits cl for 3/hit (magic vs cl's magicResist=9)
+  //   cl charges mana: 19/hit → reaches CLEAVE_COST=60 in ~4 hits (~21 ticks)
+  //   After 4 hits valve clock starts. Valve fires at tick ~271 (after 52 cl activations).
+  //   tg hits cl ~30 times (~90 dmg) → cl (hp=120) survives with 30 HP buffer.
+  //   tg takes ~468 dmg → survives until valve fires (hp=520).
+  //   Since there is only ever 1 enemy in radius, castCondition stays false the whole fight.
+  it('valve: force-casts Cleave on lone enemy after VALVE_TICKS stalling', () => {
+    const setup: FightSetup = {
+      grid: { width: 2, height: 1, blocked: [] },
+      units: [
+        { id: 'cl', side: 'A', attackKind: 'melee', skill: 'cleave',
+          attrs: { str: 20, agi: 9, int: 9, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
+        // Tanky magic attacker: very high HP (survives until valve fires),
+        // weak attack (deals 3/hit vs cl's magicResist=9).
+        { id: 'tg', side: 'B', attackKind: 'magic', attrs: { str: 100, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 1, y: 0 } },
+      ],
+    };
+    const r = runTileFight(setup, 7);
+    // The valve must force-cast at least once on the lone enemy
+    const cleaveAttacks = r.events.filter((e) => e.t === 'attack' && e.id === 'cl' && e.skill === 'cleave');
+    expect(cleaveAttacks.length).toBeGreaterThan(0);
+    // Target must be the lone enemy
+    for (const ev of cleaveAttacks) {
+      if (ev.t !== 'attack') continue;
+      expect(ev.target).toBe('tg');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Task 4: RNG action hooks — Stupid misfire + Lucky Fool retarget
 // ---------------------------------------------------------------------------
 // Draw order (fixed, same in V8 and goja):

@@ -1,7 +1,7 @@
 import type { Unit, TraitId } from '../shared/types';
 import type { Grid } from './grid';
-import { chebyshev } from './grid';
-import { HEAVY_STRIKE_COST, COWARD_FLEE_BP, RALLY_TICKS, LEADER_RADIUS } from '../shared/config';
+import { chebyshev, hasLineOfSight } from './grid';
+import { COWARD_FLEE_BP, RALLY_TICKS, LEADER_RADIUS, SKILL_COST, CLEAVE_RADIUS, CLEAVE_MIN_TARGETS, VALVE_TICKS } from '../shared/config';
 
 export type MoveMode = 'engage' | 'flee';
 export type ActionKind = 'cast' | 'basic' | 'none';
@@ -52,8 +52,35 @@ export function decideTurn(actor: Unit, ctx: FightCtx): TurnIntent {
   return { targetId: target ? target.id : null, move: 'engage', charge: false };
 }
 
-export function decideAction(actor: Unit, _target: Unit, _ctx: FightCtx): 'cast' | 'basic' {
-  return actor.skill === 'heavyStrike' && actor.mana >= HEAVY_STRIKE_COST ? 'cast' : 'basic';
+// Living enemies within CLEAVE_RADIUS with LoS; sorted chebyshev asc → priority desc → id asc.
+export function cleaveTargets(actor: Unit, ctx: FightCtx): Unit[] {
+  return ctx.units
+    .filter((u) => u.hp > 0 && u.side !== actor.side
+      && chebyshev(actor.pos, u.pos) <= CLEAVE_RADIUS
+      && hasLineOfSight(actor.pos, u.pos, (c) => ctx.grid.isBlocked(c)))
+    .sort((x, y) =>
+      chebyshev(actor.pos, x.pos) - chebyshev(actor.pos, y.pos) ||
+      y.priority - x.priority ||
+      (x.id < y.id ? -1 : 1));
+}
+
+// Whether the actor's skill condition is met for casting (target is passed for single-target skills).
+export function castCondition(actor: Unit, _target: Unit, ctx: FightCtx): boolean {
+  if (actor.skill === 'cleave') return cleaveTargets(actor, ctx).length >= CLEAVE_MIN_TARGETS;
+  return true; // heavyStrike: in-position is sufficient
+}
+
+// Effective valve threshold (VALVE_TICKS + personality delta from Task 6).
+export function effectiveValveTicks(_actor: Unit): number {
+  return VALVE_TICKS;
+}
+
+export function decideAction(actor: Unit, target: Unit, ctx: FightCtx): 'cast' | 'basic' {
+  if (!actor.skill || actor.mana < SKILL_COST[actor.skill]) return 'basic';
+  if (castCondition(actor, target, ctx)) return 'cast';
+  // valve: affordable but condition unmet for >= effectiveValveTicks → force-cast
+  if (actor.stallSinceTick >= 0 && ctx.totalTicks - actor.stallSinceTick >= effectiveValveTicks(actor)) return 'cast';
+  return 'basic';
 }
 
 export function hasTrait(unit: Unit, id: TraitId): boolean { return unit.traits.includes(id); }

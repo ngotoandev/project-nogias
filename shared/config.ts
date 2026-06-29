@@ -34,6 +34,12 @@ export const M_TAKEN = 30;          // charge scale when taking damage
 export const M_TAKEN_CAP = 22;      // per-hit cap on charge-from-taken
 export const HEAVY_STRIKE_COST = 70;
 export const HEAVY_STRIKE_MULT = 180; // x100 (1.80)
+export const CLEAVE_COST = 60;
+export const CLEAVE_RADIUS = 1;
+export const CLEAVE_MIN_TARGETS = 2;
+export const CLEAVE_MULT = 120;     // x1.20 per target
+export const VALVE_TICKS = 250;     // universal pressure-valve interval
+export const SKILL_COST = { heavyStrike: HEAVY_STRIKE_COST, cleave: CLEAVE_COST } as const;
 // Dynamic-stat traits (Plan 6):
 export const RECKLESS_ATK_BP = 6000;   // +atk fraction at 0 HP (basis points of atk)
 export const RECKLESS_DEF_BP = 2500;   // flat physDef penalty (always-on downside)

@@ -1,7 +1,7 @@
 export type Side = 'A' | 'B';
 export type AttackKind = 'melee' | 'ranged' | 'magic';
 export type DamageChannel = 'physical' | 'magic';
-export type SkillId = 'heavyStrike';
+export type SkillId = 'heavyStrike' | 'cleave';
 export type TraitId = 'reckless' | 'slowStarter' | 'bloodthirsty' | 'loyal'
   | 'coward' | 'headstrong' | 'stupid' | 'luckyFool';
 

@@ -4,9 +4,9 @@ import { deriveStats, effectiveDerived } from './stats';
 import { makeGrid, chebyshev, stepToward, stepAway, hasLineOfSight } from './grid';
 import { nextActor, TEMPO_THRESHOLD } from './initiative';
 import { hashFight } from './hash';
-import { hitBp, mitigatedDamage, applyCrit, manaGainOnHit, manaGainOnTaken, heavyStrikeDamage } from './combat';
-import { decideTurn, decideAction } from './decide';
-import { HEAVY_STRIKE_COST, COWARD_FLEE_BP, COWARD_FLEE_MOVE_BONUS, STUPID_MISFIRE_BP, LUCKY_FOOL_BP } from '../shared/config';
+import { hitBp, mitigatedDamage, applyCrit, manaGainOnHit, manaGainOnTaken, heavyStrikeDamage, cleaveDamage } from './combat';
+import { decideTurn, decideAction, castCondition, cleaveTargets } from './decide';
+import { HEAVY_STRIKE_COST, SKILL_COST, COWARD_FLEE_BP, COWARD_FLEE_MOVE_BONUS, STUPID_MISFIRE_BP, LUCKY_FOOL_BP } from '../shared/config';
 
 const MAX_TICKS = 100_000; // safety cap against stalemates
 
@@ -95,8 +95,16 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
       actor.pos = next;
     }
 
-    // In position: cast Heavy Strike if able, else a basic attack.
+    // In position: cast or basic attack.
     if (inAttackPosition(actor, target)) {
+      // Valve clock: track how long the actor has been affordable but condition-blocked.
+      // This MUST run before decideAction so stallSinceTick is current for this tick.
+      if (actor.skill && actor.mana >= SKILL_COST[actor.skill] && !castCondition(actor, target, ctx)) {
+        if (actor.stallSinceTick < 0) actor.stallSinceTick = totalTicks;
+      } else {
+        actor.stallSinceTick = -1;
+      }
+
       const aEff = effectiveDerived(actor, ctx);
       const channel = aEff.channel;
       const action = decideAction(actor, target, ctx);
@@ -105,13 +113,12 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
       // Fixed draw order: Lucky Fool gate [→ retarget index] → Stupid gate [→ misfire OR hit → crit]
       // Both gates draw only for units carrying the relevant trait.
       // Only basic attacks are subject to Stupid; Lucky Fool fires for single-target actions
-      // (basic or cast — at this task the only cast is heavyStrike, a single-target skill).
+      // (basic or heavyStrike cast). Cleave is AoE — Lucky Fool excluded when action==='cast' && skill==='cleave'.
       let actualTarget = target;
 
       // Lucky Fool: retarget among in-position enemies (chebyshev ≤ attackRange AND LoS).
-      // Applies to all single-target actions (basic and cast). At this task the only cast is
-      // heavyStrike (single-target). Task 5 will add `&& actor.skill !== 'cleave'` for AoE.
-      if (actor.traits.includes('luckyFool')) {
+      // Applies to basic and heavyStrike cast (single-target). Excluded for cleave cast (AoE).
+      if (actor.traits.includes('luckyFool') && !(action === 'cast' && actor.skill === 'cleave')) {
         if (rng.intInRange(0, 9999) < LUCKY_FOOL_BP) {
           // Build deterministic in-position enemy list: chebyshev asc → id asc.
           const inPos = units
@@ -134,23 +141,69 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
       }
       // ---- end RNG action hooks ----
 
-      // Recompute def against actualTarget (may differ after Lucky Fool retarget).
-      const tEffActual = effectiveDerived(actualTarget, ctx);
-      const defActual = channel === 'physical' ? tEffActual.physDef : tEffActual.magicResist;
-
       if (action === 'cast') {
-        // Cast: spend Mana, guaranteed hit, amplified damage, then the normal crit roll.
-        actor.mana -= HEAVY_STRIKE_COST;
-        let damage = heavyStrikeDamage(aEff.atk, defActual);
-        const crit = rng.intInRange(0, 9999) < actor.derived.critChanceBp;
-        if (crit) damage = applyCrit(damage, actor.derived.critMultX100);
-        actualTarget.hp -= damage;
-        addMana(actualTarget, manaGainOnTaken(damage, tEffActual.maxHp, actualTarget.derived.manaChargeBp));
-        const lethal = actualTarget.hp <= 0;
-        events.push({ t: 'attack', id: actor.id, target: actualTarget.id, damage, crit, channel, lethal, skill: 'heavyStrike' });
-        if (lethal) { actualTarget.hp = 0; events.push({ t: 'death', id: actualTarget.id }); actor.kills++; }
+        if (actor.skill === 'heavyStrike') {
+          // Recompute def against actualTarget (may differ after Lucky Fool retarget).
+          const tEffActual = effectiveDerived(actualTarget, ctx);
+          const defActual = channel === 'physical' ? tEffActual.physDef : tEffActual.magicResist;
+          // Cast: spend Mana, guaranteed hit, amplified damage, then the normal crit roll.
+          actor.mana -= HEAVY_STRIKE_COST;
+          let damage = heavyStrikeDamage(aEff.atk, defActual);
+          const crit = rng.intInRange(0, 9999) < actor.derived.critChanceBp;
+          if (crit) damage = applyCrit(damage, actor.derived.critMultX100);
+          actualTarget.hp -= damage;
+          addMana(actualTarget, manaGainOnTaken(damage, tEffActual.maxHp, actualTarget.derived.manaChargeBp));
+          const lethal = actualTarget.hp <= 0;
+          events.push({ t: 'attack', id: actor.id, target: actualTarget.id, damage, crit, channel, lethal, skill: 'heavyStrike' });
+          if (lethal) { actualTarget.hp = 0; events.push({ t: 'death', id: actualTarget.id }); actor.kills++; }
+        } else if (actor.skill === 'cleave') {
+          // Cleave: AoE. Get sorted target list (or single enemy if valve-forced with <MIN).
+          let tgts = cleaveTargets(actor, ctx);
+          if (tgts.length === 0) {
+            // Zero enemies in radius — fall through to basic attack instead.
+            // This shouldn't happen in normal combat since we only get here from inAttackPosition,
+            // but guard defensively.
+            const tEff = effectiveDerived(actualTarget, ctx);
+            const def = channel === 'physical' ? tEff.physDef : tEff.magicResist;
+            const chance = hitBp(actor.derived.accuracyBp, actualTarget.derived.evasionBp);
+            if (rng.intInRange(0, 9999) >= chance) {
+              events.push({ t: 'miss', id: actor.id, target: actualTarget.id });
+            } else {
+              let damage = mitigatedDamage(aEff.atk, def);
+              const crit = rng.intInRange(0, 9999) < actor.derived.critChanceBp;
+              if (crit) damage = applyCrit(damage, actor.derived.critMultX100);
+              actualTarget.hp -= damage;
+              addMana(actor, manaGainOnHit(actor.derived.manaChargeBp));
+              addMana(actualTarget, manaGainOnTaken(damage, tEff.maxHp, actualTarget.derived.manaChargeBp));
+              const lethal = actualTarget.hp <= 0;
+              events.push({ t: 'attack', id: actor.id, target: actualTarget.id, damage, crit, channel, lethal });
+              if (lethal) { actualTarget.hp = 0; events.push({ t: 'death', id: actualTarget.id }); actor.kills++; }
+            }
+            // No mana spend since we didn't actually cast
+          } else {
+            // Cleave: spend cost once, hit all targets in sorted order.
+            actor.mana -= SKILL_COST['cleave'];
+            for (const tgt of tgts) {
+              if (tgt.hp <= 0) continue; // may have died in this same cast
+              const tEff = effectiveDerived(tgt, ctx);
+              const def = channel === 'physical' ? tEff.physDef : tEff.magicResist;
+              let damage = cleaveDamage(aEff.atk, def);
+              const crit = rng.intInRange(0, 9999) < actor.derived.critChanceBp;
+              if (crit) damage = applyCrit(damage, actor.derived.critMultX100);
+              tgt.hp -= damage;
+              addMana(tgt, manaGainOnTaken(damage, tEff.maxHp, tgt.derived.manaChargeBp));
+              const lethal = tgt.hp <= 0;
+              events.push({ t: 'attack', id: actor.id, target: tgt.id, damage, crit, channel, lethal, skill: 'cleave' });
+              if (lethal) { tgt.hp = 0; events.push({ t: 'death', id: tgt.id }); actor.kills++; }
+            }
+            // Caster gains no mana from Cleave.
+          }
+        }
       } else {
         // Basic attack: hit roll -> mitigation -> crit roll (unchanged from Plan 4).
+        // Recompute def against actualTarget (may differ after Lucky Fool retarget).
+        const tEffActual = effectiveDerived(actualTarget, ctx);
+        const defActual = channel === 'physical' ? tEffActual.physDef : tEffActual.magicResist;
         const chance = hitBp(actor.derived.accuracyBp, actualTarget.derived.evasionBp);
         if (rng.intInRange(0, 9999) >= chance) {
           events.push({ t: 'miss', id: actor.id, target: actualTarget.id });
