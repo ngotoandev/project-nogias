@@ -35,3 +35,18 @@ it('hashMap changes when an owner changes', () => {
   s.tiles.find(t => t.id === 't1')!.owner = 'player';
   expect(hashMap(s)).not.toBe(h0);
 });
+it('initConquest deep-copies: mutating returned state does not bleed into setup input', () => {
+  const input = setup();
+  const origArmyStr = input.armies[0]!.units[0]!.attrs.str;
+  const origGarrisonPosX = input.tiles[2]!.garrison[0]!.pos.x;
+
+  const state = initConquest(input);
+
+  // Mutate returned state's nested fields
+  state.armies[0]!.units[0]!.attrs.str = 99;
+  state.tiles.find(t => t.id === 't2')!.garrison[0]!.pos.x = 42;
+
+  // Input must be unchanged (deep-copy contract)
+  expect(input.armies[0]!.units[0]!.attrs.str).toBe(origArmyStr);
+  expect(input.tiles[2]!.garrison[0]!.pos.x).toBe(origGarrisonPosX);
+});
