@@ -6,7 +6,7 @@ import { nextActor, TEMPO_THRESHOLD } from './initiative';
 import { hashFight } from './hash';
 import { hitBp, mitigatedDamage, applyCrit, manaGainOnHit, manaGainOnTaken, heavyStrikeDamage, cleaveDamage } from './combat';
 import { decideTurn, decideAction, castCondition, cleaveTargets } from './decide';
-import { HEAVY_STRIKE_COST, SKILL_COST, COWARD_FLEE_BP, COWARD_FLEE_MOVE_BONUS, STUPID_MISFIRE_BP, LUCKY_FOOL_BP } from '../shared/config';
+import { HEAVY_STRIKE_COST, CLEAVE_COST, SKILL_COST, COWARD_FLEE_BP, COWARD_FLEE_MOVE_BONUS, STUPID_MISFIRE_BP, LUCKY_FOOL_BP } from '../shared/config';
 
 const MAX_TICKS = 100_000; // safety cap against stalemates
 
@@ -158,31 +158,12 @@ export function runTileFight(setup: FightSetup, seed: number): FightResult {
           if (lethal) { actualTarget.hp = 0; events.push({ t: 'death', id: actualTarget.id }); actor.kills++; }
         } else if (actor.skill === 'cleave') {
           // Cleave: AoE. Get sorted target list (or single enemy if valve-forced with <MIN).
-          let tgts = cleaveTargets(actor, ctx);
-          if (tgts.length === 0) {
-            // Zero enemies in radius — fall through to basic attack instead.
-            // This shouldn't happen in normal combat since we only get here from inAttackPosition,
-            // but guard defensively.
-            const tEff = effectiveDerived(actualTarget, ctx);
-            const def = channel === 'physical' ? tEff.physDef : tEff.magicResist;
-            const chance = hitBp(actor.derived.accuracyBp, actualTarget.derived.evasionBp);
-            if (rng.intInRange(0, 9999) >= chance) {
-              events.push({ t: 'miss', id: actor.id, target: actualTarget.id });
-            } else {
-              let damage = mitigatedDamage(aEff.atk, def);
-              const crit = rng.intInRange(0, 9999) < actor.derived.critChanceBp;
-              if (crit) damage = applyCrit(damage, actor.derived.critMultX100);
-              actualTarget.hp -= damage;
-              addMana(actor, manaGainOnHit(actor.derived.manaChargeBp));
-              addMana(actualTarget, manaGainOnTaken(damage, tEff.maxHp, actualTarget.derived.manaChargeBp));
-              const lethal = actualTarget.hp <= 0;
-              events.push({ t: 'attack', id: actor.id, target: actualTarget.id, damage, crit, channel, lethal });
-              if (lethal) { actualTarget.hp = 0; events.push({ t: 'death', id: actualTarget.id }); actor.kills++; }
-            }
-            // No mana spend since we didn't actually cast
-          } else {
-            // Cleave: spend cost once, hit all targets in sorted order.
-            actor.mana -= SKILL_COST['cleave'];
+          // Zero targets is unreachable when in attack position (melee CLEAVE_RADIUS=1 === attackRange=1),
+          // but treated as a safe no-op: unit keeps closing next tick.
+          const tgts = cleaveTargets(actor, ctx);
+          if (tgts.length > 0) {
+            // Spend cost once, hit all targets in sorted order.
+            actor.mana -= CLEAVE_COST;
             for (const tgt of tgts) {
               if (tgt.hp <= 0) continue; // may have died in this same cast
               const tEff = effectiveDerived(tgt, ctx);

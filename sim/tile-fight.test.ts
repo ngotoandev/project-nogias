@@ -258,9 +258,23 @@ describe('runTileFight Cleave skill', () => {
       ],
     };
     const r = runTileFight(setup, 5);
-    // Find an activation where 'cl' emits two consecutive attack{skill:'cleave'} events
-    const cleaveAttacks = r.events.filter((e) => e.t === 'attack' && e.id === 'cl' && e.skill === 'cleave');
-    expect(cleaveAttacks.length).toBeGreaterThanOrEqual(2);
+    // Find a single activation where 'cl' emits two consecutive attack{skill:'cleave'} events
+    // targeting DIFFERENT enemies — no intervening event from another actor.
+    // This proves the AoE hit multiple enemies in one cast, not across separate turns.
+    let foundAoEActivation = false;
+    for (let i = 0; i < r.events.length - 1; i++) {
+      const e1 = r.events[i]!;
+      const e2 = r.events[i + 1]!;
+      if (
+        e1.t === 'attack' && e1.id === 'cl' && e1.skill === 'cleave' &&
+        e2.t === 'attack' && e2.id === 'cl' && e2.skill === 'cleave' &&
+        e1.target !== e2.target
+      ) {
+        foundAoEActivation = true;
+        break;
+      }
+    }
+    expect(foundAoEActivation).toBe(true);
   });
 
   it('cleave: attack events have skill=cleave and channel=physical', () => {
