@@ -268,7 +268,7 @@ describe('runScriptedConquest', () => {
     expect(runReplay({ version: 1, setup: canonical.setup, seed: 42 }).hash).toBe('86e238c1');
   });
 
-  it('runScriptedConquest runs a dispatch→travel→capture scenario deterministically', () => {
+  it('runScriptedConquest runs a dispatch→travel→capture scenario and produces the known-good hash', () => {
     const bundle: ConquestBundle = {
       version: 3,
       seed: 0,
@@ -276,21 +276,35 @@ describe('runScriptedConquest', () => {
       script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] }],
     };
     const r = runScriptedConquest(bundle);
-    expect(typeof r.hash).toBe('string');
+    // Pinned hash: must equal the capture golden exactly.
+    // Fails if the dispatch is rejected (no-op) or the capture path does not fire.
+    expect(r.hash).toBe('503f1a30');
     expect(r.ticks).toBeGreaterThan(0);
   });
 
-  it('runScriptedConquest is deterministic (same result twice)', () => {
+  it('runScriptedConquest contested scenario produces the known-good hash', () => {
+    // Same map as capture but t2 has a garrison — army arrives and state becomes contested.
+    const contestedSetup: MapSetup = {
+      tiles: [
+        { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+        { id: 't1', type: 'start', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
+        { id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' }, garrison: [
+          { id: 'e1', side: 'B', attrs: { str: 5, agi: 1, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
+        ] },
+      ],
+      armies: [{ id: 'a1', units: [unitSpec], tile: 't0' }],
+    };
     const bundle: ConquestBundle = {
       version: 3,
       seed: 0,
-      setup: mapWithUndefendedTarget,
+      setup: contestedSetup,
       script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] }],
     };
-    const r1 = runScriptedConquest(bundle);
-    const r2 = runScriptedConquest(bundle);
-    expect(r1.hash).toBe(r2.hash);
-    expect(r1.ticks).toBe(r2.ticks);
+    const r = runScriptedConquest(bundle);
+    // Pinned hash: must equal the contested golden exactly.
+    // Fails if the dispatch is rejected (no-op) or the contested seam path does not fire.
+    expect(r.hash).toBe('f6abc10b');
+    expect(r.ticks).toBeGreaterThan(0);
   });
 
   it('runReplay v3 branch delegates to runScriptedConquest and returns hash+ticks (no winner/endReason)', () => {
@@ -301,7 +315,8 @@ describe('runScriptedConquest', () => {
       script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] }],
     };
     const r = runReplay(bundle);
-    expect(typeof r.hash).toBe('string');
+    // Pinned: same capture bundle as runScriptedConquest, must equal the capture golden.
+    expect(r.hash).toBe('503f1a30');
     expect(r.ticks).toBeGreaterThan(0);
     expect(r.winner).toBeUndefined();
     expect(r.endReason).toBeUndefined();
