@@ -615,7 +615,104 @@ it('a sortie repelled by a strong defender keeps the tile, status stays active, 
   expect(defender!.state).toBe('garrisoned');                                // settled back
 });
 
-// Boss interplay: terminal-sticky status pre-empts any sortie consequence.
+// ── v4 parity pin tests for enemy sortie fixtures (Task 5) ───────────────────
+// Mirror the exact bundles used in tools/parity/fixtures.mjs.
+
+const sortieWinBundle = {
+  version: 4 as const,
+  seed: 1,
+  setup: {
+    enemyReclaims: true,
+    tiles: [
+      { id: 's',    type: 'enemy' as const,  owner: 'enemy' as const,  neighbors: { E: 't' },         garrison: [
+        { id: 'g1', side: 'B' as const, attackKind: 'melee' as const, attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } },
+        { id: 'g2', side: 'B' as const, attackKind: 'melee' as const, attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 1, y: 0 } },
+        { id: 'g3', side: 'B' as const, attackKind: 'melee' as const, attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 2, y: 0 } },
+      ] },
+      { id: 't',    type: 'enemy' as const,  owner: 'player' as const, neighbors: { W: 's' },         garrison: [] },
+      { id: 'k',    type: 'start' as const,  owner: 'player' as const, neighbors: {},                  garrison: [] },
+    ],
+    armies: [
+      { id: 'd',    units: [{ id: 'du', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 1, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }], tile: 't' },
+      { id: 'keep', units: [{ id: 'ku', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 5, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }], tile: 'k' },
+    ],
+  },
+  script: [] as [],
+};
+
+const sortieRepelledBundle = {
+  version: 4 as const,
+  seed: 1,
+  setup: {
+    enemyReclaims: true,
+    tiles: [
+      { id: 's', type: 'enemy' as const, owner: 'enemy' as const,  neighbors: { E: 't' }, garrison: [
+        { id: 'g1', side: 'B' as const, attackKind: 'melee' as const, attrs: { str: 1, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } },
+      ] },
+      { id: 't', type: 'enemy' as const, owner: 'player' as const, neighbors: { W: 's' }, garrison: [] },
+    ],
+    armies: [
+      { id: 'd', units: [{ id: 'du', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }], tile: 't' },
+    ],
+  },
+  script: [] as [],
+};
+
+const sortieLossBundle = {
+  version: 4 as const,
+  seed: 1,
+  setup: {
+    enemyReclaims: true,
+    tiles: [
+      { id: 's', type: 'enemy' as const, owner: 'enemy' as const,  neighbors: { E: 't' }, garrison: [
+        { id: 'g1', side: 'B' as const, attackKind: 'melee' as const, attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } },
+        { id: 'g2', side: 'B' as const, attackKind: 'melee' as const, attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 1, y: 0 } },
+        { id: 'g3', side: 'B' as const, attackKind: 'melee' as const, attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 2, y: 0 } },
+      ] },
+      { id: 't', type: 'enemy' as const, owner: 'player' as const, neighbors: { W: 's' }, garrison: [] },
+    ],
+    armies: [
+      { id: 'd', units: [{ id: 'du', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 1, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }], tile: 't' },
+    ],
+  },
+  script: [] as [],
+};
+
+it('run-sortie-win-seed1 pin: strong enemy sorties weak defender → t flips enemy, d destroyed, keep survives → active (hash 094fddf6)', () => {
+  const r = runScriptedRun(sortieWinBundle);
+  expect(r.hash).toBe('094fddf6');
+  // postcondition via direct run: t flips to enemy, army d is destroyed, keep persists, status active
+  const run = initRun(sortieWinBundle.setup, sortieWinBundle.seed);
+  for (let i = 0; i < 200 && run.status === 'active'; i++) runTick(run, []);
+  expect(run.map.tiles.find((x) => x.id === 't')!.owner).toBe('enemy');   // t flipped
+  expect(run.map.armies.find((a) => a.id === 'd')).toBeUndefined();         // d destroyed
+  expect(run.map.armies.find((a) => a.id === 'keep')).toBeDefined();        // keep survives
+  expect(run.status).toBe('active');                                         // not lost (keep army exists)
+});
+
+it('run-sortie-repelled-seed1 pin: weak enemy sorties strong defender → t stays player, d garrisoned → active (hash d5034dd6)', () => {
+  const r = runScriptedRun(sortieRepelledBundle);
+  expect(r.hash).toBe('d5034dd6');
+  // postcondition via direct run: t stays player, sortie event fired, d garrisoned, status active
+  const run = initRun(sortieRepelledBundle.setup, sortieRepelledBundle.seed);
+  for (let i = 0; i < 200 && run.status === 'active'; i++) runTick(run, []);
+  expect(run.map.tiles.find((x) => x.id === 't')!.owner).toBe('player');  // t held
+  expect(run.map.events.some((e) => e.t === 'sortie')).toBe(true);          // sortie fired
+  expect(run.map.armies.find((a) => a.id === 'd')!.state).toBe('garrisoned'); // d survived garrisoned
+  expect(run.status).toBe('active');
+});
+
+it('run-sortie-lethal-seed1 pin: strong enemy sorties ONLY player army → armies empty → lost (hash e33b0318)', () => {
+  const r = runScriptedRun(sortieLossBundle);
+  expect(r.hash).toBe('e33b0318');
+  // postcondition via direct run: t flips enemy, last army gone → status lost
+  const run = initRun(sortieLossBundle.setup, sortieLossBundle.seed);
+  for (let i = 0; i < 200 && run.status === 'active'; i++) runTick(run, []);
+  expect(run.map.tiles.find((x) => x.id === 't')!.owner).toBe('enemy');   // t flipped
+  expect(run.status).toBe('lost');                                           // only army destroyed → lost
+});
+
+// ── Boss interplay: terminal-sticky status pre-empts any sortie consequence.
 // A sortie opening on a non-boss tile the same tick the player captures the boss
 // does NOT un-win the run — status becomes 'won' at the END of that tick and stays.
 // There is NO test for "boss tile gets un-won after winning" because the run-loop

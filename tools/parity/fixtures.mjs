@@ -20,6 +20,9 @@
 //   run-boon-seed1                   (2064aa00) — player captures undefended enemy boon tile; str+3 → derived HP rises; quiesces active
 //   run-reclaim-seed1                (b06ecc1e) — enemy AI reclaims vacated t0 + undefended t2 while a1 assaults t1
 //   run-hold-seed1                   (9dc7f64d) — t1 sorties a2-defended t2; a2 repels (defender wins); a1 captures vacated t1
+//   run-sortie-win-seed1             (094fddf6) — strong enemy garrison sorties weak player defender; sortie wins → t flips enemy; keep survives → active
+//   run-sortie-repelled-seed1        (d5034dd6) — weak enemy garrison sorties strong player defender; defender repels → t stays player → active
+//   run-sortie-lethal-seed1          (e33b0318) — strong enemy garrison sorties player's ONLY army; sortie wins → armies empty → lost
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {
@@ -497,6 +500,91 @@ export const FIXTURES = [
       script: [
         { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] },
       ],
+    },
+  },
+  {
+    // run-sortie-win-seed1: s (enemy, 3 strong garrison g1/g2/g3 str=20) — E — t (player, defended
+    // by weak army d: 1 unit str=1). keep army on isolated player tile k (no adjacent enemy garrison
+    // → never sortied) keeps state.armies non-empty after d is destroyed.
+    // Enemy AI sorties t; overwhelming str=20×3 vs str=1 → sortie wins → t flips to enemy, d destroyed.
+    // keep survives → run quiesces 'active' (not lost; no boss tile).
+    // Postcondition: t.owner==='enemy', army d gone, keep survives, status==='active'.
+    name: 'run-sortie-win-seed1',
+    expectedHash: '094fddf6',
+    bundle: {
+      version: 4,
+      seed: 1,
+      setup: {
+        enemyReclaims: true,
+        tiles: [
+          { id: 's',    type: 'enemy',  owner: 'enemy',  neighbors: { E: 't' },         garrison: [
+            { id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } },
+            { id: 'g2', side: 'B', attackKind: 'melee', attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 1, y: 0 } },
+            { id: 'g3', side: 'B', attackKind: 'melee', attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 2, y: 0 } },
+          ] },
+          { id: 't',    type: 'enemy',  owner: 'player', neighbors: { W: 's' },         garrison: [] },
+          { id: 'k',    type: 'start',  owner: 'player', neighbors: {},                  garrison: [] },
+        ],
+        armies: [
+          { id: 'd',    units: [{ id: 'du', side: 'A', attackKind: 'melee', attrs: { str: 1, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }], tile: 't' },
+          { id: 'keep', units: [{ id: 'ku', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }], tile: 'k' },
+        ],
+      },
+      script: [],
+    },
+  },
+  {
+    // run-sortie-repelled-seed1: s (enemy, weak garrison g1 str=1) — E — t (player, defended by
+    // strong army d: 1 unit str=20). Single player army.
+    // Enemy AI sorties t; weak str=1 vs strong str=20 defender → sortie repelled → t stays player,
+    // d survives garrisoned (attrited). Run quiesces 'active'.
+    // Postcondition: t.owner==='player', sortie event fired, d ends garrisoned, status==='active'.
+    name: 'run-sortie-repelled-seed1',
+    expectedHash: 'd5034dd6',
+    bundle: {
+      version: 4,
+      seed: 1,
+      setup: {
+        enemyReclaims: true,
+        tiles: [
+          { id: 's', type: 'enemy', owner: 'enemy',  neighbors: { E: 't' }, garrison: [
+            { id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 1, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } },
+          ] },
+          { id: 't', type: 'enemy', owner: 'player', neighbors: { W: 's' }, garrison: [] },
+        ],
+        armies: [
+          { id: 'd', units: [{ id: 'du', side: 'A', attackKind: 'melee', attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }], tile: 't' },
+        ],
+      },
+      script: [],
+    },
+  },
+  {
+    // run-sortie-lethal-seed1: s (enemy, 3 strong garrison g1/g2/g3 str=20) — E — t (player,
+    // defended by the player's ONLY army d: 1 weak unit str=1). No other player army.
+    // Enemy AI sorties t; overwhelming sortie wins → t flips enemy, d destroyed → state.armies empty
+    // → isLost → run.status = 'lost'.
+    // Postcondition: t.owner==='enemy', status==='lost'.
+    name: 'run-sortie-lethal-seed1',
+    expectedHash: 'e33b0318',
+    bundle: {
+      version: 4,
+      seed: 1,
+      setup: {
+        enemyReclaims: true,
+        tiles: [
+          { id: 's', type: 'enemy', owner: 'enemy',  neighbors: { E: 't' }, garrison: [
+            { id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } },
+            { id: 'g2', side: 'B', attackKind: 'melee', attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 1, y: 0 } },
+            { id: 'g3', side: 'B', attackKind: 'melee', attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 2, y: 0 } },
+          ] },
+          { id: 't', type: 'enemy', owner: 'player', neighbors: { W: 's' }, garrison: [] },
+        ],
+        armies: [
+          { id: 'd', units: [{ id: 'du', side: 'A', attackKind: 'melee', attrs: { str: 1, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }], tile: 't' },
+        ],
+      },
+      script: [],
     },
   },
 ];
