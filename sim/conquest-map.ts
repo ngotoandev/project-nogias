@@ -594,6 +594,8 @@ function buildSortieSetup(state: MapState, target: MapTile, source: MapTile,
 }
 
 export function openSortie(state: MapState, source: MapTile, target: MapTile): void {
+  // defends with ALL armies on the tile; the run-layer only sorties stationary-defended tiles, so no
+  // transient passer-by can be caught today — revisit (gate on garrisoned/contested) once enemy mobile armies exist.
   const defenderArmies = state.armies.filter((a) => a.tile === target.id);
   const attackerGarrison = source.garrison.slice();              // stash originals (attackKind lost from fight Unit)
   const { setup, seed } = buildSortieSetup(state, target, source, defenderArmies, attackerGarrison);
