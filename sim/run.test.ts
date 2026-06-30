@@ -367,3 +367,36 @@ it('run-boon-seed1 pin: capture undefended boon tile buffs str +3 → derived HP
   expect(r.status).toBe('active');
   expect(r.hash).toBe('2064aa00');
 });
+
+// ── effectClaimed tests (Task 1) ──────────────────────────────────────────────
+
+const u = (id: string, side: 'A'|'B', str: number) => ({ id, side, attackKind: 'melee' as const, attrs: { str, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } });
+// player start t0 — undefended enemy muster tile t1
+const musterMap: MapSetup = {
+  tiles: [
+    { id: 't0', type: 'start',  owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+    { id: 't1', type: 'muster', owner: 'enemy',  neighbors: { W: 't0' }, garrison: [], muster: [u('m1','A',4)] },
+  ],
+  armies: [{ id: 'a1', tile: 't0', units: [u('a1u','A',9)] }],
+};
+
+it('a captured muster tile spawns exactly one reserve, even if re-owned (claimed once ever)', () => {
+  const run = initRun(musterMap, 1);
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
+  for (let i = 0; i < 30 && !run.map.armies.some((a) => a.id === 'muster-t1'); i++) runTick(run, []);
+  expect(run.map.armies.filter((a) => a.id === 'muster-t1')).toHaveLength(1);
+  // simulate a recapture cycle: flip t1 enemy then back to player, tick again → still ONE muster army
+  const t1 = run.map.tiles.find((t) => t.id === 't1')!;
+  t1.owner = 'enemy'; runTick(run, []); t1.owner = 'player'; runTick(run, []);
+  expect(run.map.armies.filter((a) => a.id === 'muster-t1')).toHaveLength(1);
+});
+
+it('a muster tile that STARTS player-owned never fires (you did not capture it)', () => {
+  const startOwned: MapSetup = {
+    tiles: [{ id: 't0', type: 'muster', owner: 'player', neighbors: {}, garrison: [], muster: [u('m1','A',4)] }],
+    armies: [{ id: 'a1', tile: 't0', units: [u('a1u','A',9)] }],
+  };
+  const run = initRun(startOwned, 1);
+  for (let i = 0; i < 5; i++) runTick(run, []);
+  expect(run.map.armies.some((a) => a.id.startsWith('muster-'))).toBe(false);
+});

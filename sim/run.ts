@@ -8,7 +8,9 @@ import { REST_HEAL_PER_TICK } from '../shared/config';
 export interface RunState { map: MapState; status: 'active' | 'won' | 'lost' | 'extracted'; }
 
 export function initRun(setup: MapSetup, seed = 0): RunState {
-  return { map: initConquest(setup, seed), status: 'active' };
+  const map = initConquest(setup, seed);
+  for (const t of map.tiles) if (t.owner === 'player') t.effectClaimed = true; // started-owned ⇒ not captured ⇒ never fires
+  return { map, status: 'active' };
 }
 
 export function hashRun(run: RunState): string {
@@ -30,12 +32,14 @@ function cloneUnitSpec(u: UnitSpec): UnitSpec {
     personality: u.personality ? { ...u.personality } : undefined };
 }
 
-function applyCaptureEffects(map: MapState, ownedBefore: Set<string>): void {
+function applyCaptureEffects(map: MapState): void {
   for (const tile of map.tiles) {
-    if (tile.owner !== 'player' || ownedBefore.has(tile.id)) continue; // newly captured this tick only
+    if (tile.owner !== 'player' || tile.effectClaimed) continue; // fire at most once ever, on first player-ownership
+    let fired = false;
     if (tile.type === 'muster' && tile.muster && tile.muster.length > 0) {
       map.armies.push({ id: `muster-${tile.id}`, units: tile.muster.map(cloneUnitSpec),
         tile: tile.id, state: 'garrisoned', travelGauge: 0 });
+      fired = true;
     }
     if (tile.type === 'boon' && tile.boon) {
       const boon = tile.boon;
@@ -44,7 +48,9 @@ function applyCaptureEffects(map: MapState, ownedBefore: Set<string>): void {
           u.attrs[boon.attr] += boon.amount;
         }
       }
+      fired = true;
     }
+    if (fired) tile.effectClaimed = true;
   }
 }
 
@@ -64,11 +70,10 @@ function applyRestHealing(map: MapState): void {
 export function runTick(run: RunState, commands: RunCommand[]): RunState {
   if (run.status !== 'active') return run;                          // terminal status is sticky
   if (commands.some((c) => c.t === 'extract')) { run.status = 'extracted'; return run; }
-  const ownedBefore = new Set(run.map.tiles.filter((t) => t.owner === 'player').map((t) => t.id));
   const mapCommands = commands.filter((c): c is MapCommand => c.t !== 'extract');
   advance(run.map, mapCommands);
   applyRestHealing(run.map);
-  applyCaptureEffects(run.map, ownedBefore);
+  applyCaptureEffects(run.map);          // was applyCaptureEffects(run.map, ownedBefore)
   if (isWon(run.map)) run.status = 'won';
   else if (isLost(run.map)) run.status = 'lost';
   return run;
