@@ -698,6 +698,100 @@ it('an army arriving at an already-battling tile joinFights its units (side A, c
   expect(committedCount(s, 't2')).toBe(2);
 });
 
+// ── Task 6: Retreat mid-battle ───────────────────────────────────────────────
+
+// Durable attacker (high physDef via int → survives many fight ticks) vs a sturdy
+// garrison (multiple moderate units that survive many rounds). The attacker has NO
+// Bloodthirsty trait so orderRetreat is obeyed. The fight is balanced enough that
+// the battle lasts several map ticks, giving us time to issue Retreat before it resolves.
+function setupDurableAttackerForRetreat(): MapSetup {
+  const garUnit = (id: string) => ({
+    id, side: 'B' as const, attackKind: 'melee' as const,
+    attrs: { str: 8, agi: 8, int: 8, lck: 1 }, priority: 5, pos: { x: 0, y: 0 },
+  });
+  return {
+    tiles: [
+      { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+      { id: 't1', type: 'cache', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
+      {
+        id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' },
+        // Sturdy garrison: 3 moderate units → battle lasts many ticks
+        garrison: [garUnit('g1'), garUnit('g2'), garUnit('g3')],
+      },
+    ],
+    armies: [{
+      id: 'a1',
+      // High int for physDef → a1u is durable (survives the garrison's attacks while retreating).
+      // High agi for fast travel. No Bloodthirsty so orderRetreat is obeyed.
+      units: [{ id: 'a1u', side: 'A', attackKind: 'melee', attrs: { str: 10, agi: 20, int: 30, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+      tile: 't1', // start on launch tile so route is just ['t2'] → 1 hop (5 ticks at tempo 30)
+    }],
+  };
+}
+
+it('Retreat of a contesting army orders its fight units out; once all exit it returns to owned soil with survivors, slot freed', () => {
+  const s = initConquest(setupDurableAttackerForRetreat());
+  // a1 starts on t1 (player-owned, adjacent to t2); dispatch → route ['t2'] → 1 hop (5 ticks at tempo 30)
+  advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]);
+
+  const a1 = () => s.armies.find(x => x.id === 'a1')!;
+
+  // Advance until a1 is contested (arrived at t2 and opened battle)
+  const SAFETY1 = 30;
+  for (let i = 0; i < SAFETY1 && a1().state !== 'contested'; i++) advance(s, []);
+  expect(a1().state).toBe('contested');
+  expect(a1().tile).toBe('t2');
+  expect((s as MapState).battles.find(b => b.tile === 't2')).toBeDefined();
+
+  // Inspect the fight state BEFORE issuing retreat, to verify orderRetreat is called.
+  // We need to peek at the battle's fight units after applyRetreat but before the
+  // battle-step loop. We do this by checking the event after the advance call instead.
+  // The slotFreed event confirms the retreat mechanism ran; retreated event confirms
+  // the army made it back. We verify the flow via events rather than intermediate state.
+
+  // Issue Retreat for a1 while it is contested (mid-battle).
+  // Within this advance call: applyRetreat sets retreating on fight units + retreatOrdered,
+  // battle-step loop steps units toward the exit, post-step check transitions army once all exit.
+  // So by the end of this advance call the army may already be 'retreating' (units exited fast).
+  advance(s, [{ t: 'retreat', armyId: 'a1' }]);
+
+  // slotFreed must fire in the same tick (the post-step exit-check emits it when army transitions)
+  expect(s.events.some(e => e.t === 'slotFreed' && (e as any).tile === 't2' && (e as any).armyId === 'a1')).toBe(true);
+  // Army must no longer be contested (either retreating or already garrisoned if it hopped back)
+  expect(a1().state).not.toBe('contested');
+
+  // Advance to quiescence (all units exited or dead → army reconstitutes and routes home)
+  // advanceUntilQuiescent tracks contested armies too
+  const SAFETY2 = 300;
+  for (let i = 0; i < SAFETY2; i++) {
+    const busy = s.armies.some(a => a.state === 'travelling' || a.state === 'contested' || a.state === 'retreating')
+      || s.battles.length > 0;
+    if (!busy) break;
+    advance(s, []);
+  }
+
+  // a1 must end garrisoned on owned soil (t1, the only owned neighbor of t2)
+  expect(a1().state).toBe('garrisoned');
+  expect(a1().tile).toBe('t1');
+
+  // Slot freed: committedCount(t2) === 0
+  expect(committedCount(s, 't2')).toBe(0);
+  expect(a1().target).toBeUndefined();
+
+  // slotFreed event emitted during retreat
+  expect(s.events.some(e => e.t === 'slotFreed' && (e as any).tile === 't2' && (e as any).armyId === 'a1')).toBe(true);
+
+  // retreated event emitted on arrival at t1
+  expect(s.events.some(e => e.t === 'retreated' && (e as any).armyId === 'a1' && (e as any).to === 't1')).toBe(true);
+
+  // a1 has surviving units with carried HP (startHp set)
+  expect(a1().units.length).toBeGreaterThan(0);
+  for (const u of a1().units) {
+    expect(u.startHp).toBeDefined();
+    expect(u.startHp).toBeGreaterThan(0);
+  }
+});
+
 it('defender win: attacker army removed, garrison survivors persist (attrited), tile stays enemy', () => {
   const s = initConquest(setupWeakAttackerStrongGarrison());
   advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]);

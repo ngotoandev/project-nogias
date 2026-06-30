@@ -114,7 +114,7 @@ export type TileOwner = 'player' | 'enemy' | 'neutral';
 export type TileType = 'start' | 'enemy' | 'elite' | 'boss' | 'rest' | 'cache' | 'event' | 'recruit' | 'muster' | 'boon' | 'mysterious';
 export interface MapTile { id: string; type: TileType; owner: TileOwner; neighbors: { N?: string; S?: string; E?: string; W?: string }; garrison: UnitSpec[]; }
 export type ArmyState = 'garrisoned' | 'travelling' | 'contested' | 'retreating';
-export interface Army { id: string; units: UnitSpec[]; tile: string; state: ArmyState; target?: string; route?: string[]; travelGauge: number; gate?: MapEdge; }
+export interface Army { id: string; units: UnitSpec[]; tile: string; state: ArmyState; target?: string; route?: string[]; travelGauge: number; gate?: MapEdge; retreatOrdered?: boolean; /* transient — NOT hashed */ }
 export interface MapSetup { tiles: MapTile[]; armies: { id: string; units: UnitSpec[]; tile: string }[]; }
 export type MapEvent =
   | { t: 'dispatched'; armyId: string; toTile: string }

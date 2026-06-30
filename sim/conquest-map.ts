@@ -1,6 +1,6 @@
 import type { MapSetup, MapCommand, MapEdge, MapTile, Army, UnitSpec, FightSetup, GridSpec, MapEvent } from '../shared/types';
 import type { FightState } from './tile-fight';
-import { initFight, stepFight, joinFight } from './tile-fight';
+import { initFight, stepFight, joinFight, orderRetreat } from './tile-fight';
 import { fnv1a } from './hash';
 import { deriveStats } from './stats';
 import { MAX_COMMIT, TRAVEL_THRESHOLD, DEFAULT_FIGHT_GRID, STEPS_PER_MAP_TICK } from '../shared/config';
@@ -253,6 +253,34 @@ function applyRetreat(state: MapState, armyId: string): void {
     state.events.push({ t: 'rejected', armyId, reason: 'not-recallable' });
     return;
   }
+
+  // Task 6: if contested AND an active battle exists at the target tile,
+  // order each of the army's active fight units to retreat via their gate.
+  // Do NOT free the slot yet — keep army.target so the commit-cap stays correct
+  // while the units walk to the exit edge. The post-step exit-check in advance
+  // transitions the army once all its fight units are exited||dead.
+  if (army.state === 'contested') {
+    const battle = state.battles.find((b) => b.tile === army.target);
+    if (battle) {
+      for (const u of army.units) {
+        const fightUnitId = `${army.id}#${u.id}`;
+        const fu = battle.fight.units.find((f) => f.id === fightUnitId);
+        if (fu && fu.hp > 0 && !fu.exited) {
+          // NOTE: Bloodthirsty units ignore orderRetreat (Plan 1 invariant).
+          // Such a unit will fight on; the army stays contested until the battle
+          // resolves normally. Only when all non-Bloodthirsty units have exited
+          // AND Bloodthirsty units have died does the army count as fully pulled out.
+          orderRetreat(battle.fight, fightUnitId, army.gate!);
+        }
+      }
+      army.retreatOrdered = true;
+      // Slot and route NOT freed here — handled by the post-step exit-check.
+      return;
+    }
+    // Contested but no active battle (defensive edge case — should not occur post-Task-5):
+    // fall through to the existing Plan-2 contested behavior below.
+  }
+
   const wasTarget = army.target;
   army.target = undefined; // free the slot immediately
   if (wasTarget) state.events.push({ t: 'slotFreed', tile: wasTarget, armyId });
@@ -264,7 +292,7 @@ function applyRetreat(state: MapState, armyId: string): void {
     army.travelGauge = 0;
     state.events.push({ t: 'retreated', armyId, to: cur.id });
   } else {
-    // On an enemy tile (contested) → hop back to first owned neighbor (N,S,E,W order)
+    // On an enemy tile (contested, no active battle) → hop back to first owned neighbor
     const back = ownedNeighborIds(state, cur)[0];
     if (!back) throw new Error(`applyRetreat: contested army ${armyId} at ${cur.id} has no owned neighbor`);
     army.state = 'retreating';
@@ -399,6 +427,48 @@ export function advance(state: MapState, commands: MapCommand[]): MapState {
   for (const b of state.battles) {
     for (let k = 0; k < STEPS_PER_MAP_TICK && !b.fight.outcome; k++) {
       stepFight(b.fight);
+    }
+  }
+
+  // Post-step exit-check (Task 6): for each active battle, check retreat-ordered armies.
+  // This runs AFTER the battle-step loop and BEFORE outcome application so that a fully-
+  // exited retreating army transitions to 'retreating' before the outcome filter
+  // (`target===tile && state==='contested'`) runs — ensuring it is excluded from the
+  // outcome's attacker set if it has already left.
+  for (const b of state.battles) {
+    // Iterate over a snapshot so we can safely remove armies mid-loop.
+    for (const army of state.armies.slice()) {
+      if (!army.retreatOrdered || army.target !== b.tile || army.state !== 'contested') continue;
+
+      // Check if ALL of this army's fight units are exited or dead.
+      // A Bloodthirsty unit ignores orderRetreat and may still be alive+fighting;
+      // in that case the army stays contested and the battle resolves normally.
+      const allOut = army.units.every((u) => {
+        const fu = b.fight.units.find((f) => f.id === `${army.id}#${u.id}`);
+        return !fu || fu.exited || fu.hp <= 0;
+      });
+      if (!allOut) continue;
+
+      // All fight units are out — reconstitute from exited survivors.
+      reconcileArmy(army, b.fight);
+      const tile = b.tile;
+      if (army.units.length === 0) {
+        // No survivors — remove army entirely.
+        const idx = state.armies.indexOf(army);
+        if (idx !== -1) state.armies.splice(idx, 1);
+      } else {
+        // Route back to first owned neighbor of the contested tile (invariant: always exists).
+        const contestedTile = tileById(state, tile)!;
+        const back = ownedNeighborIds(state, contestedTile)[0];
+        if (!back) throw new Error(`post-step exit-check: army ${army.id} at ${tile} has no owned neighbor to retreat to`);
+        army.state = 'retreating';
+        army.route = [back];
+        army.target = undefined;
+        army.gate = undefined;
+        army.retreatOrdered = false;
+        army.travelGauge = 0;
+      }
+      state.events.push({ t: 'slotFreed', tile, armyId: army.id });
     }
   }
 
