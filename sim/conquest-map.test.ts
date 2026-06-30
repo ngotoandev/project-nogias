@@ -847,27 +847,46 @@ const u = (id: string, side: 'A' | 'B', str: number, agi = 5): UnitSpec => ({
 // ── Task 2: enemy sortie outcome — WIN and REPEL ─────────────────────────────
 
 it('enemy sortie WIN: tile flips to enemy, attacker garrison installed, defender army destroyed', () => {
+  // 3×str20 enemy garrison (maxHp=120) vs 1×str1 defender — attacker wins decisively
+  // Deterministic: g1 takes 4 damage from the weak defender before it dies → g1.startHp=116
   const state = initConquest({ tiles: [
     { id: 's', type: 'enemy', owner: 'enemy', neighbors: { E: 't' }, garrison: [u('g1','B',20), u('g2','B',20), u('g3','B',20)] },
     { id: 't', type: 'enemy', owner: 'player', neighbors: { W: 's' }, garrison: [] },
   ], armies: [{ id: 'd', tile: 't', units: [u('du','A',1)] }] }, 1);
   openSortie(state, state.tiles.find(x=>x.id==='s')!, state.tiles.find(x=>x.id==='t')!);
   for (let i = 0; i < 80 && state.battles.length; i++) advance(state, []);
-  expect(state.tiles.find(x=>x.id==='t')!.owner).toBe('enemy');        // flipped to enemy
-  expect(state.tiles.find(x=>x.id==='t')!.garrison.length).toBeGreaterThan(0); // enemy survivors installed
-  expect(state.armies.find(a=>a.id==='d')).toBeUndefined();            // defender destroyed (lethal)
+  const tTile = state.tiles.find(x=>x.id==='t')!;
+  expect(tTile.owner).toBe('enemy');                                   // flipped to enemy
+  expect(tTile.garrison.length).toBeGreaterThan(0);                   // enemy survivors installed
+  expect(state.armies.find(a=>a.id==='d')).toBeUndefined();           // defender destroyed (lethal)
+  // prove attackKind restored from attackerGarrison (not lost from fight Unit)
+  const g1 = tTile.garrison.find(g => g.id === 'g1')!;
+  expect(g1.attackKind).toBe('melee');                                 // attackKind preserved from original spec
+  // prove HP-carry: g1 took 4 hp of damage, so startHp < maxHp (120) and equals the fight survivor's hp
+  expect(g1.startHp).toBe(116);                                       // exact surviving hp carried (not reset to full)
+  expect(g1.startHp!).toBeLessThan(120);                              // strictly below maxHp → attrition not reset
 });
 
 it('enemy sortie REPELLED: tile stays player, defender holds (attrited), attacker discarded', () => {
-  // strong defender (str 20 ×3) vs weak sortie (str 1) → defender (side B) wins
+  // 2×str15 enemy sortie vs 3×str12 defenders (maxHp=80 each) → player holds but takes attrition
+  // Deterministic: d1 killed, d2 survives at startHp=56, d3 at startHp=80; routing state cleared
   const state = initConquest({ tiles: [
-    { id: 's', type: 'enemy', owner: 'enemy', neighbors: { E: 't' }, garrison: [u('g1','B',1)] },
+    { id: 's', type: 'enemy', owner: 'enemy', neighbors: { E: 't' }, garrison: [u('g1','B',15), u('g2','B',15)] },
     { id: 't', type: 'enemy', owner: 'player', neighbors: { W: 's' }, garrison: [] },
-  ], armies: [{ id: 'd', tile: 't', units: [u('d1','A',20), u('d2','A',20), u('d3','A',20)] }] }, 1);
+  ], armies: [{ id: 'd', tile: 't', units: [u('d1','A',12), u('d2','A',12), u('d3','A',12)] }] }, 1);
   openSortie(state, state.tiles.find(x=>x.id==='s')!, state.tiles.find(x=>x.id==='t')!);
   for (let i = 0; i < 80 && state.battles.length; i++) advance(state, []);
-  expect(state.tiles.find(x=>x.id==='t')!.owner).toBe('player');       // held
-  expect(state.armies.find(a=>a.id==='d')!.state).toBe('garrisoned');  // back to holding
+  expect(state.tiles.find(x=>x.id==='t')!.owner).toBe('player');      // held
+  const dArmy = state.armies.find(a=>a.id==='d')!;
+  expect(dArmy.state).toBe('garrisoned');                              // back to holding
+  // prove routing state cleared (reconcileArmy + re-garrison path)
+  expect(dArmy.target).toBeUndefined();                                // target cleared
+  expect(dArmy.gate).toBeUndefined();                                  // gate cleared
+  expect(dArmy.route).toBeUndefined();                                 // route cleared
+  // prove HP-carry via reconcileArmy: d2 survived below max (80)
+  const d2 = dArmy.units.find(u => u.id === 'd2')!;
+  expect(d2.startHp).toBe(56);                                        // exact surviving hp carried
+  expect(d2.startHp!).toBeLessThan(80);                               // strictly below maxHp (str=12 → 20+12*5=80)
 });
 
 it('openSortie opens an enemy-attacker battle: enemy garrison side A, player army side B, source emptied', () => {
