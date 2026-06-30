@@ -37,7 +37,14 @@ function applyCaptureEffects(map: MapState, ownedBefore: Set<string>): void {
       map.armies.push({ id: `muster-${tile.id}`, units: tile.muster.map(cloneUnitSpec),
         tile: tile.id, state: 'garrisoned', travelGauge: 0 });
     }
-    // Boon branch added in Task 2.
+    if (tile.type === 'boon' && tile.boon) {
+      const boon = tile.boon;
+      for (const army of map.armies) {
+        for (const u of army.units) {
+          u.attrs[boon.attr] += boon.amount;
+        }
+      }
+    }
   }
 }
 

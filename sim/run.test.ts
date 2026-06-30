@@ -248,7 +248,7 @@ it('capturing a muster tile spawns a garrisoned reserve army (muster-<id>) with 
   const run = initRun(musterSetup, 1);
   expect(run.map.armies.some((a) => a.id === 'muster-t1')).toBe(false); // not before capture
   runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
-  for (let i = 0; i < 40 && !run.map.tiles.find((t) => t.id === 't1')!.owner.includes('player'); i++) runTick(run, []);
+  for (let i = 0; i < 40 && run.map.tiles.find((t) => t.id === 't1')!.owner !== 'player'; i++) runTick(run, []);
   const mustered = run.map.armies.find((a) => a.id === 'muster-t1');
   expect(mustered).toBeDefined();
   expect(mustered!.state).toBe('garrisoned');
@@ -275,4 +275,46 @@ it('cloneUnitSpec isolates the mustered army from the setup', () => {
   run.map.armies.find((a) => a.id === 'muster-t1')!.units[0]!.attrs.str = 999;
   const origSpec = musterSetup.tiles[1]!.muster![0]!;
   expect(origSpec.attrs.str).toBe(4); // setup untouched
+});
+
+// ── Boon tile tests (Task 2) ─────────────────────────────────────────────────
+
+const boonSetup: MapSetup = {
+  tiles: [
+    { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+    { id: 't1', type: 'boon',  owner: 'enemy',  neighbors: { W: 't0' }, garrison: [], boon: { attr: 'str', amount: 3 } },
+  ],
+  armies: [{ id: 'a1', tile: 't0', units: [
+    { id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
+  ] }],
+};
+
+it('capturing a boon tile adds amount to attr on every player unit, raising derived maxHp, once', () => {
+  const run = initRun(boonSetup, 1);
+  const u = run.map.armies[0]!.units[0]!;
+  const hpBefore = deriveStats(u.attrs, u.attackKind).maxHp;
+  expect(u.attrs.str).toBe(5);
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
+  for (let i = 0; i < 40 && run.map.tiles.find((t) => t.id === 't1')!.owner !== 'player'; i++) runTick(run, []);
+  const after = run.map.armies[0]!.units[0]!;
+  expect(after.attrs.str).toBe(8);                                   // +3, once
+  expect(deriveStats(after.attrs, after.attackKind).maxHp).toBeGreaterThan(hpBefore);
+  const strAfterCapture = after.attrs.str;
+  for (let i = 0; i < 5; i++) runTick(run, []);
+  expect(run.map.armies[0]!.units[0]!.attrs.str).toBe(strAfterCapture); // fires once
+});
+
+it('a non-boon capture does not buff', () => {
+  const s = JSON.parse(JSON.stringify(boonSetup)); s.tiles[1].type = 'enemy'; delete s.tiles[1].boon;
+  const run = initRun(s, 1);
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
+  for (let i = 0; i < 40; i++) runTick(run, []);
+  expect(run.map.armies[0]!.units[0]!.attrs.str).toBe(5); // unchanged
+});
+
+it('boon does not bleed into the setup', () => {
+  const run = initRun(boonSetup, 1);
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
+  for (let i = 0; i < 40; i++) runTick(run, []);
+  expect(boonSetup.armies[0]!.units[0]!.attrs.str).toBe(5); // setup untouched (army attrs were cloned at initConquest)
 });
