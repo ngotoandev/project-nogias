@@ -76,3 +76,39 @@ it('losing: no armies left ⇒ lost', () => {
   runTick(run, []);
   expect(run.status).toBe('lost');
 });
+
+// ── Rest healing tests (Task 3) ──────────────────────────────────────────────
+
+import { REST_HEAL_PER_TICK } from '../shared/config';
+import { deriveStats } from './stats';
+
+const restSetup: MapSetup = {
+  tiles: [{ id: 'r0', type: 'rest', owner: 'player', neighbors: {}, garrison: [] }],
+  armies: [{ id: 'a1', tile: 'r0', units: [
+    { id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 }, startHp: 3 },
+  ] }],
+};
+
+it('a wounded unit garrisoned on an owned rest tile heals REST_HEAL_PER_TICK/tick, capped at maxHp', () => {
+  const run = initRun(restSetup, 1);
+  const u = run.map.armies[0]!.units[0]!;
+  const maxHp = deriveStats(u.attrs, u.attackKind).maxHp;
+  runTick(run, []);
+  expect(run.map.armies[0]!.units[0]!.startHp).toBe(Math.min(maxHp, 3 + REST_HEAL_PER_TICK));
+  // heal to the cap and confirm it never exceeds maxHp
+  for (let i = 0; i < 100; i++) runTick(run, []);
+  expect(run.map.armies[0]!.units[0]!.startHp).toBe(maxHp);
+});
+
+it('no healing off a rest tile / on an enemy-owned rest tile / when not garrisoned', () => {
+  // enemy-owned rest tile: army present but tile.owner !== 'player' ⇒ no heal
+  const enemyRest: MapSetup = {
+    tiles: [{ id: 'r0', type: 'rest', owner: 'enemy', neighbors: {}, garrison: [] }],
+    armies: [{ id: 'a1', tile: 'r0', units: [
+      { id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 }, startHp: 3 },
+    ] }],
+  };
+  const run = initRun(enemyRest, 1);
+  runTick(run, []);
+  expect(run.map.armies[0]!.units[0]!.startHp).toBe(3); // unchanged
+});
