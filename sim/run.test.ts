@@ -1,6 +1,8 @@
 import { it, expect } from 'vitest';
 import { initRun, hashRun, runTick, type RunState } from './run';
 import type { MapSetup, RunCommand } from '../shared/types';
+import { runScriptedRun } from './replay';
+import { runReplay } from './replay';
 
 // a minimal 1-tile setup: a start tile owned by the player with one army on it
 const soloSetup: MapSetup = {
@@ -132,9 +134,6 @@ it('no healing off a rest tile / on an enemy-owned rest tile / when not garrison
 
 // ── runScriptedRun / runReplay v4 tests (Task 4) ─────────────────────────────
 
-import { runScriptedRun } from './replay';
-import { runReplay } from './replay';
-
 it('runScriptedRun drives a dispatch to a boss capture ⇒ won', () => {
   const r = runScriptedRun({ version: 4, seed: 1, setup: bossSetup,
     script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] }] });
@@ -153,4 +152,79 @@ it('runReplay routes v4 to runScriptedRun', () => {
     script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] }] });
   expect(typeof r.hash).toBe('string');
   expect(r.ticks).toBeGreaterThan(0);
+});
+
+// ── v4 parity pin tests (Task 5) ─────────────────────────────────────────────
+// Mirror the exact bundles used in tools/parity/fixtures.mjs.
+
+it('run-won-seed1 pin: strong attacker defeats lightly-garrisoned boss tile → won (hash 561ab142)', () => {
+  const r = runScriptedRun({
+    version: 4,
+    seed: 1,
+    setup: {
+      tiles: [
+        { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+        {
+          id: 't1', type: 'boss', owner: 'enemy', neighbors: { W: 't0' },
+          garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+        },
+      ],
+      armies: [{
+        id: 'a1',
+        units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }],
+        tile: 't0',
+      }],
+    },
+    script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] }],
+  });
+  expect(r.status).toBe('won');
+  expect(r.hash).toBe('561ab142');
+});
+
+it('run-rest-heal-seed1 pin: wounded a1 heals on rest tile while a2 travels → hash 930e2fc9', () => {
+  const r = runScriptedRun({
+    version: 4,
+    seed: 1,
+    setup: {
+      tiles: [
+        { id: 'r0', type: 'rest', owner: 'player', neighbors: { E: 'e1' }, garrison: [] },
+        { id: 'e1', type: 'enemy', owner: 'enemy', neighbors: { W: 'r0' }, garrison: [] },
+      ],
+      armies: [
+        {
+          id: 'a1',
+          units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 }, startHp: 3 }],
+          tile: 'r0',
+        },
+        {
+          id: 'a2',
+          units: [{ id: 'u2', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+          tile: 'r0',
+        },
+      ],
+    },
+    script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a2', toTile: 'e1' }] }],
+  });
+  expect(r.status).toBe('active');
+  expect(r.hash).toBe('930e2fc9');
+});
+
+it('run-extract-seed1 pin: extract at tick 0 → extracted (hash 5b653528)', () => {
+  const r = runScriptedRun({
+    version: 4,
+    seed: 1,
+    setup: {
+      tiles: [
+        { id: 't0', type: 'start', owner: 'player', neighbors: {}, garrison: [] },
+      ],
+      armies: [{
+        id: 'a1',
+        units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+        tile: 't0',
+      }],
+    },
+    script: [{ atTick: 0, commands: [{ t: 'extract' }] }],
+  });
+  expect(r.status).toBe('extracted');
+  expect(r.hash).toBe('5b653528');
 });

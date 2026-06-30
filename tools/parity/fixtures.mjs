@@ -13,6 +13,9 @@
 //   personality-tiebreak-seed1       (8d2831ec) — hotheaded lean: actor equidistant from a_tanky (str=10) + z_glass (str=4); picks z_glass (lower HP)
 //   scripted-join-seed5              (7af6bcae) — A reinforcement joins at activation 3; turns B-win into A-win
 //   scripted-retreat-seed7           (63b649df) — b1 ordered to retreat E at activation 2; crosses width-7 grid, takes hits, exits retreated
+//   run-won-seed1                    (PENDING)  — strong attacker dispatched to lightly-garrisoned boss tile → won
+//   run-rest-heal-seed1              (PENDING)  — wounded a1 heals on rest tile while a2 travels to undefended enemy tile
+//   run-extract-seed1                (PENDING)  — extract command at tick 0 → extracted
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {
@@ -281,6 +284,92 @@ export const FIXTURES = [
       },
       script: [
         { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] },
+      ],
+    },
+  },
+  {
+    // run-won-seed1: strong attacker (str=20,agi=20) on player 'start' tile t0, adjacent (E) to
+    // enemy 'boss' tile t1 with a lightly-garrisoned defender (str=1,agi=1). Script dispatches a1
+    // to t1 at tick 0. Attacker wins the fight, captures the boss → run status: 'won'.
+    // Exercises the full run→travel→fight→capture→win path with a boss tile win-condition.
+    name: 'run-won-seed1',
+    expectedHash: '561ab142',
+    bundle: {
+      version: 4,
+      seed: 1,
+      setup: {
+        tiles: [
+          { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+          {
+            id: 't1', type: 'boss', owner: 'enemy', neighbors: { W: 't0' },
+            garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+          },
+        ],
+        armies: [{
+          id: 'a1',
+          units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }],
+          tile: 't0',
+        }],
+      },
+      script: [
+        { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] },
+      ],
+    },
+  },
+  {
+    // run-rest-heal-seed1: TWO armies on a player-owned 'rest' tile r0; a1 has a wounded unit
+    // (startHp=3, well below maxHp). a2 is dispatched to adjacent undefended enemy tile e1 at
+    // tick 0. While a2 travels + captures (several pending ticks), a1 heals each tick on r0.
+    // Run quiesces 'active'; hash reflects a1's accumulated healing (hashMap folds startHp).
+    // NOTE: r0.neighbors.E==='e1'; e1.neighbors.W==='r0' (reciprocal); e1 garrison empty.
+    name: 'run-rest-heal-seed1',
+    expectedHash: '930e2fc9',
+    bundle: {
+      version: 4,
+      seed: 1,
+      setup: {
+        tiles: [
+          { id: 'r0', type: 'rest', owner: 'player', neighbors: { E: 'e1' }, garrison: [] },
+          { id: 'e1', type: 'enemy', owner: 'enemy', neighbors: { W: 'r0' }, garrison: [] },
+        ],
+        armies: [
+          {
+            id: 'a1',
+            units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 }, startHp: 3 }],
+            tile: 'r0',
+          },
+          {
+            id: 'a2',
+            units: [{ id: 'u2', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+            tile: 'r0',
+          },
+        ],
+      },
+      script: [
+        { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a2', toTile: 'e1' }] },
+      ],
+    },
+  },
+  {
+    // run-extract-seed1: minimal player start tile with one army. Script issues extract at tick 0.
+    // Run immediately sets status='extracted'. Proves extract command → extracted-status hash.
+    name: 'run-extract-seed1',
+    expectedHash: '5b653528',
+    bundle: {
+      version: 4,
+      seed: 1,
+      setup: {
+        tiles: [
+          { id: 't0', type: 'start', owner: 'player', neighbors: {}, garrison: [] },
+        ],
+        armies: [{
+          id: 'a1',
+          units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+          tile: 't0',
+        }],
+      },
+      script: [
+        { atTick: 0, commands: [{ t: 'extract' }] },
       ],
     },
   },
