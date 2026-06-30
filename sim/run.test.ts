@@ -368,6 +368,76 @@ it('run-boon-seed1 pin: capture undefended boon tile buffs str +3 → derived HP
   expect(r.hash).toBe('2064aa00');
 });
 
+// ── v4 parity pin tests for enemy reclaim fixtures (Task 3) ──────────────────
+// Mirror the exact bundles used in tools/parity/fixtures.mjs.
+
+const reclaimBundle = {
+  version: 4 as const,
+  seed: 1,
+  setup: {
+    enemyReclaims: true,
+    tiles: [
+      { id: 't0', type: 'start' as const, owner: 'player' as const, neighbors: { E: 't1' }, garrison: [] },
+      { id: 't1', type: 'enemy' as const, owner: 'enemy' as const, neighbors: { W: 't0', E: 't2' },
+        garrison: [{ id: 'g1', side: 'B' as const, attackKind: 'melee' as const, attrs: { str: 4, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }] },
+      { id: 't2', type: 'rest' as const, owner: 'player' as const, neighbors: { W: 't1' }, garrison: [] },
+    ],
+    armies: [{
+      id: 'a1',
+      units: [{ id: 'u1', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 9, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }],
+      tile: 't0',
+    }],
+  },
+  script: [{ atTick: 0, commands: [{ t: 'dispatch' as const, armyId: 'a1', toTile: 't1' }] }],
+};
+
+const holdBundle = {
+  version: 4 as const,
+  seed: 1,
+  setup: {
+    enemyReclaims: true,
+    tiles: [
+      { id: 't0', type: 'start' as const, owner: 'player' as const, neighbors: { E: 't1' }, garrison: [] },
+      { id: 't1', type: 'enemy' as const, owner: 'enemy' as const, neighbors: { W: 't0', E: 't2' },
+        garrison: [{ id: 'g1', side: 'B' as const, attackKind: 'melee' as const, attrs: { str: 4, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }] },
+      { id: 't2', type: 'rest' as const, owner: 'player' as const, neighbors: { W: 't1' }, garrison: [] },
+    ],
+    armies: [
+      {
+        id: 'a1',
+        units: [{ id: 'u1', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 9, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }],
+        tile: 't0',
+      },
+      {
+        id: 'a2',
+        units: [{ id: 'u2', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 4, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }],
+        tile: 't2',
+      },
+    ],
+  },
+  script: [{ atTick: 0, commands: [{ t: 'dispatch' as const, armyId: 'a1', toTile: 't1' }] }],
+};
+
+it('run-reclaim-seed1 pin: enemy AI reclaims vacated t0 + undefended t2 while a1 assaults t1 (hash b06ecc1e)', () => {
+  const r = runScriptedRun(reclaimBundle);
+  expect(r.hash).toBe('b06ecc1e');
+  // postcondition: t2 was undefended — enemy AI reclaimed it; verify via direct run
+  const run = initRun(reclaimBundle.setup, reclaimBundle.seed);
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
+  for (let i = 0; i < 200 && run.status === 'active'; i++) runTick(run, []);
+  expect(run.map.tiles.find((t) => t.id === 't2')!.owner).toBe('enemy');
+});
+
+it('run-hold-seed1 pin: enemy AI reclaims vacated t0 but NOT t2 (held by a2) (hash 00cc43c7)', () => {
+  const r = runScriptedRun(holdBundle);
+  expect(r.hash).toBe('00cc43c7');
+  // postcondition: t2 was defended by a2 — enemy AI could NOT reclaim it; verify via direct run
+  const run = initRun(holdBundle.setup, holdBundle.seed);
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
+  for (let i = 0; i < 200 && run.status === 'active'; i++) runTick(run, []);
+  expect(run.map.tiles.find((t) => t.id === 't2')!.owner).toBe('player');
+});
+
 // ── effectClaimed tests (Task 1) ──────────────────────────────────────────────
 
 const u = (id: string, side: 'A'|'B', str: number) => ({ id, side, attackKind: 'melee' as const, attrs: { str, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } });

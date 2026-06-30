@@ -18,6 +18,8 @@
 //   run-extract-seed1                (5b653528) — extract command at tick 0 → extracted
 //   run-muster-seed1                 (205ee9dc) — player captures undefended enemy muster tile; spawns muster-t1 reserve army; quiesces active
 //   run-boon-seed1                   (2064aa00) — player captures undefended enemy boon tile; str+3 → derived HP rises; quiesces active
+//   run-reclaim-seed1                (b06ecc1e) — enemy AI reclaims vacated t0 + undefended t2 while a1 assaults t1
+//   run-hold-seed1                   (00cc43c7) — enemy AI reclaims vacated t0 but NOT t2 (held by a2)
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {
@@ -425,6 +427,70 @@ export const FIXTURES = [
           units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
           tile: 't0',
         }],
+      },
+      script: [
+        { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] },
+      ],
+    },
+  },
+  {
+    // run-reclaim-seed1: enemyReclaims=true; t0 (player start, a1) — E — t1 (enemy, garrisoned g1)
+    // — E — t2 (player rest, undefended). Script dispatches a1 → t1 at tick 0. While a1 travels
+    // to fight t1, the garrisoned t1 reclaims the vacated t0 and the undefended t2 each tick.
+    // Run quiesces; hash reflects reclaim outcomes + t1 assault result.
+    name: 'run-reclaim-seed1',
+    expectedHash: 'b06ecc1e',
+    bundle: {
+      version: 4,
+      seed: 1,
+      setup: {
+        enemyReclaims: true,
+        tiles: [
+          { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+          { id: 't1', type: 'enemy', owner: 'enemy',  neighbors: { W: 't0', E: 't2' },
+            garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 4, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }] },
+          { id: 't2', type: 'rest',  owner: 'player', neighbors: { W: 't1' }, garrison: [] },
+        ],
+        armies: [{
+          id: 'a1',
+          units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 9, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }],
+          tile: 't0',
+        }],
+      },
+      script: [
+        { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] },
+      ],
+    },
+  },
+  {
+    // run-hold-seed1: same map as run-reclaim-seed1 but a2 garrisons t2 (defended). Script dispatches
+    // a1 → t1 at tick 0. Enemy AI reclaims the vacated t0 but NOT t2 (held by a2). Run quiesces;
+    // hash reflects t2 surviving as player-owned while t0 is reclaimed.
+    name: 'run-hold-seed1',
+    expectedHash: '00cc43c7',
+    bundle: {
+      version: 4,
+      seed: 1,
+      setup: {
+        enemyReclaims: true,
+        tiles: [
+          { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+          { id: 't1', type: 'enemy', owner: 'enemy',  neighbors: { W: 't0', E: 't2' },
+            garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 4, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }] },
+          { id: 't2', type: 'rest',  owner: 'player', neighbors: { W: 't1' }, garrison: [] },
+        ],
+        armies: [
+          {
+            id: 'a1',
+            units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 9, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }],
+            tile: 't0',
+          },
+          {
+            id: 'a2',
+            units: [{ id: 'u2', side: 'A', attackKind: 'melee', attrs: { str: 4, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }],
+            tile: 't2',
+          },
+        ],
       },
       script: [
         { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] },
