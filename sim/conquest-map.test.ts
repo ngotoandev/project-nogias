@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { initConquest, hashMap, advance, committedCount } from './conquest-map';
+import { initConquest, hashMap, advance, committedCount, MapState } from './conquest-map';
 import type { MapSetup } from '../shared/types';
 
 // 3 tiles in a row: t0(player) — t1(neutral, empty) — t2(enemy, garrison). Helper builds it.
@@ -382,31 +382,60 @@ it('retreat a garrisoned army: rejected with not-recallable', () => {
   expect(s.events.some(e => e.t === 'rejected' && e.armyId === 'a1' && 'reason' in e && e.reason === 'not-recallable')).toBe(true);
 });
 
-it('arriving at a DEFENDED tile becomes contested (no resolution, slot held, contested event)', () => {
-  // setupT1OwnedFastArmy: t2 has garrison → defended.
-  // Route ['t1','t2'] = 2 hops. First hop at tick 5 (to t1), second at tick 10 (to t2 = arrival).
+// ── Task 2: gate recording + open-battle ─────────────────────────────────────
+
+it('dispatch records the army gate (edge of target facing the launch tile)', () => {
+  // setupWithT1Owned: t0(player)—t1(player)—t2(enemy). t2.neighbors.W = 't1'.
+  // a1 dispatches from t0; launch tile = t1; t2.W === 't1' → gate should be 'W'.
+  const s = initConquest(setupWithT1Owned());
+  advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]);
+  const a = s.armies.find(x => x.id === 'a1')!;
+  expect(a.gate).toBe('W');
+});
+
+it('arriving at a DEFENDED tile opens a battle: attacker units side A (ids armyId#unit), garrison side B, battleOpened event', () => {
+  // setupT1OwnedFastArmy: t2 has garrison g1 → defended.
+  // Route ['t1','t2'] = 2 hops. First hop at tick 5, second at tick 10.
   const s = initConquest(setupT1OwnedFastArmy());
   advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]); // tick 0
   const a = () => s.armies.find(x => x.id === 'a1')!;
-  // 4 advances: no hop yet (gauge < 100 after each)
   for (let i = 0; i < 4; i++) advance(s, []);
   expect(a().tile).toBe('t0');
-  advance(s, []); // tick 5: hop to t1 (route still has ['t2'])
+  advance(s, []); // tick 5: hop to t1
   expect(a().tile).toBe('t1');
   expect(a().state).toBe('travelling');
-  // 4 more advances: gauge restarted from 0 after hop; 4 advances = 80
   for (let i = 0; i < 4; i++) advance(s, []);
-  expect(a().tile).toBe('t1'); // still at t1
-  advance(s, []); // tick 10: hop to t2 AND arrives → resolveArrival (defended)
+  expect(a().tile).toBe('t1');
+  advance(s, []); // tick 10: hop to t2 AND arrives → resolveArrival (defended) → opens battle
   expect(a().tile).toBe('t2');
   expect(a().state).toBe('contested');
   // Owner still enemy (no capture)
   expect(s.tiles.find(t => t.id === 't2')!.owner).toBe('enemy');
-  // contested event fired with sorted attackers list
-  const contestedEvent = s.events.find(e => e.t === 'contested' && e.tile === 't2');
-  expect(contestedEvent).toBeDefined();
-  expect((contestedEvent as any).attackers).toEqual(['a1']);
+  // battleOpened event fired (NOT 'contested')
+  const battleEvent = s.events.find(e => e.t === 'battleOpened' && (e as any).tile === 't2');
+  expect(battleEvent).toBeDefined();
+  expect((battleEvent as any).attackers).toEqual(['a1']);
   // Slot still held: committedCount = 1 (army keeps target)
   expect(a().target).toBe('t2');
   expect(committedCount(s, 't2')).toBe(1);
+  // A battle was opened for this tile
+  const ms = s as MapState;
+  expect(ms.battles.length).toBe(1);
+  expect(ms.battles[0]!.tile).toBe('t2');
+  const fight = ms.battles[0]!.fight;
+  // Attacker unit has id 'a1#a1u', side 'A'
+  const attackerUnit = fight.units.find(u => u.id === 'a1#a1u');
+  expect(attackerUnit).toBeDefined();
+  expect(attackerUnit!.side).toBe('A');
+  // Garrison unit has id 'garrison#g1', side 'B'
+  const garrisonUnit = fight.units.find(u => u.id === 'garrison#g1');
+  expect(garrisonUnit).toBeDefined();
+  expect(garrisonUnit!.side).toBe('B');
+  // No two units share the same initial position
+  const positions = fight.units.map(u => `${u.pos.x},${u.pos.y}`);
+  const unique = new Set(positions);
+  expect(unique.size).toBe(positions.length);
+  // initConquest sets seed; battles present
+  expect(ms.seed).toBe(0);
+  expect(Array.isArray(ms.battles)).toBe(true);
 });

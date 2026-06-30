@@ -223,33 +223,4 @@ export const FIXTURES = [
       ],
     },
   },
-  {
-    // conquest-contested-seed0: army a1 dispatches from owned t0 across transit t1 to defended
-    // enemy tile t2 (has a garrison unit). After 2 hops army arrives, engagement is contested
-    // (unresolved — Plan 3 handles fights). Quiescent once contested.
-    // Proves version-3 runReplay, contested seam path, and V8===goja parity.
-    name: 'conquest-contested-seed0',
-    expectedHash: 'f6abc10b',
-    bundle: {
-      version: 3,
-      seed: 0,
-      setup: {
-        tiles: [
-          { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
-          { id: 't1', type: 'start', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
-          { id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' }, garrison: [
-            { id: 'e1', side: 'B', attrs: { str: 5, agi: 1, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
-          ] },
-        ],
-        armies: [
-          { id: 'a1', units: [
-            { id: 'u1', side: 'A', attrs: { str: 5, agi: 1, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
-          ], tile: 't0' },
-        ],
-      },
-      script: [
-        { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] },
-      ],
-    },
-  },
 ];

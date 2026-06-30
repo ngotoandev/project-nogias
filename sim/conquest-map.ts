@@ -1,7 +1,9 @@
-import type { MapSetup, MapState, MapCommand, MapEdge, MapTile, Army, UnitSpec } from '../shared/types';
+import type { MapSetup, MapCommand, MapEdge, MapTile, Army, UnitSpec, FightSetup, GridSpec } from '../shared/types';
+import type { FightState } from './tile-fight';
+import { initFight } from './tile-fight';
 import { fnv1a } from './hash';
 import { deriveStats } from './stats';
-import { MAX_COMMIT, TRAVEL_THRESHOLD } from '../shared/config';
+import { MAX_COMMIT, TRAVEL_THRESHOLD, DEFAULT_FIGHT_GRID } from '../shared/config';
 
 const cloneSpec = (u: UnitSpec): UnitSpec => ({
   ...u,
@@ -11,12 +13,25 @@ const cloneSpec = (u: UnitSpec): UnitSpec => ({
   personality: u.personality ? { ...u.personality } : undefined,
 });
 
-export function initConquest(setup: MapSetup): MapState {
+// ── MapState (relocated from shared/types.ts; now holds FightStates) ─────────
+
+export interface MapBattle { tile: string; fight: FightState; }
+
+export interface MapState {
+  tiles: MapTile[];
+  armies: Army[];
+  totalTicks: number;
+  events: import('../shared/types').MapEvent[];
+  seed: number;
+  battles: MapBattle[];
+}
+
+export function initConquest(setup: MapSetup, seed = 0): MapState {
   const tiles = setup.tiles.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((t) => ({ ...t, neighbors: { ...t.neighbors }, garrison: t.garrison.map(cloneSpec) }));
   const armies: Army[] = setup.armies.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((a) => ({ id: a.id, units: a.units.map(cloneSpec), tile: a.tile, state: 'garrisoned', travelGauge: 0 }));
-  return { tiles, armies, totalTicks: 0, events: [] };
+  return { tiles, armies, totalTicks: 0, events: [], seed, battles: [] };
 }
 
 // ── Conquest helpers ─────────────────────────────────────────────────────────
@@ -104,6 +119,94 @@ function ownedNeighborIds(state: MapState, tile: MapTile): string[] {
   return result;
 }
 
+// ── Battle helpers ────────────────────────────────────────────────────────────
+
+// Given a target tile and the id of the launch tile (owned tile adjacent to it),
+// return the edge of the target tile that faces the launch tile.
+function gateOf(tile: MapTile, launchId: string): MapEdge {
+  for (const e of EDGES) if (tile.neighbors[e] === launchId) return e;
+  throw new Error(`gateOf: ${launchId} is not a neighbor of ${tile.id}`);
+}
+
+// Deterministic integer seed derived from map seed + tile id (integer math only, goja-safe).
+function fightSeed(seed: number, tileId: string): number {
+  let h = (seed >>> 0) ^ 0x9e3779b9;
+  for (let i = 0; i < tileId.length; i++) h = Math.imul(h ^ tileId.charCodeAt(i), 0x01000193) >>> 0;
+  return h >>> 0;
+}
+
+// Returns the deploy cell for the k-th unit (0-based) on a gate edge of the grid.
+// k+1 skips the corner so different gates never collide at (0,0) etc.
+function deployCell(edge: MapEdge, grid: GridSpec, k: number): { x: number; y: number } {
+  const i = k + 1;
+  if (edge === 'W') return { x: 0, y: i };
+  if (edge === 'E') return { x: grid.width - 1, y: i };
+  if (edge === 'N') return { x: i, y: 0 };
+  /* S */ return { x: i, y: grid.height - 1 };
+}
+
+// Returns the garrison cell for the k-th garrison unit (0-based), interior center column.
+function garrisonCell(grid: GridSpec, k: number): { x: number; y: number } {
+  return { x: (grid.width / 2) | 0, y: k + 1 };
+}
+
+// Build the FightSetup for a battle at a defended tile.
+// attackerArmies: all contesting armies targeting this tile (sorted by id).
+// bundleSeed: the map's seed (for fightSeed derivation).
+function buildFightSetup(
+  tile: MapTile,
+  attackerArmies: Army[],
+  bundleSeed: number,
+): { setup: FightSetup; seed: number } {
+  const grid = DEFAULT_FIGHT_GRID;
+  const units: UnitSpec[] = [];
+
+  // Per-gate running index (tracks how many units have been placed on each gate edge)
+  const gateIndex: Record<string, number> = {};
+
+  // Attacker units: armies sorted by id, units in array order
+  for (const army of attackerArmies.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+    const gate = army.gate!;
+    if (gateIndex[gate] === undefined) gateIndex[gate] = 0;
+    for (const u of army.units) {
+      const k: number = gateIndex[gate] as number;
+      gateIndex[gate] = k + 1;
+      units.push({
+        id: `${army.id}#${u.id}`,
+        side: 'A',
+        attackKind: u.attackKind,
+        attrs: { ...u.attrs },
+        skill: u.skill,
+        traits: u.traits ? u.traits.slice() : undefined,
+        personality: u.personality ? { ...u.personality } : undefined,
+        priority: u.priority,
+        startHp: u.startHp,
+        pos: deployCell(gate, grid, k),
+      });
+    }
+  }
+
+  // Garrison units: interior center column, distinct rows
+  for (let k = 0; k < tile.garrison.length; k++) {
+    const g = tile.garrison[k]!;
+    units.push({
+      id: `garrison#${g.id}`,
+      side: 'B',
+      attackKind: g.attackKind,
+      attrs: { ...g.attrs },
+      skill: g.skill,
+      traits: g.traits ? g.traits.slice() : undefined,
+      personality: g.personality ? { ...g.personality } : undefined,
+      priority: g.priority,
+      startHp: g.startHp,
+      pos: garrisonCell(grid, k),
+    });
+  }
+
+  const seed = fightSeed(bundleSeed, tile.id);
+  return { setup: { grid, units }, seed };
+}
+
 function applyRetreat(state: MapState, armyId: string): void {
   const army = state.armies.find((a) => a.id === armyId);
   if (!army || (army.state !== 'travelling' && army.state !== 'contested')) {
@@ -148,13 +251,29 @@ function resolveArrival(state: MapState, army: Army): void {
     army.state = 'garrisoned';
     army.target = undefined;
   } else {
-    // defended: inert engagement seam (Plan 3 resolves)
+    // defended: set army contested first so it's included in the attacker list
     army.state = 'contested';
-    const attackers = state.armies
-      .filter((a) => a.target === tile.id && a.state === 'contested')
-      .map((a) => a.id)
-      .sort();
-    state.events.push({ t: 'contested', tile: tile.id, attackers });
+
+    // Check if a battle is already active for this tile
+    const existing = state.battles.find(b => b.tile === tile.id);
+    if (existing) {
+      // Task 5: joinFight — for now just mark contested, don't open a second battle
+    } else {
+      // Gather all contested attacker armies targeting this tile (includes just-arrived one)
+      const attackerArmies = state.armies.filter(
+        (a) => a.target === tile.id && a.state === 'contested',
+      );
+
+      const { setup, seed } = buildFightSetup(tile, attackerArmies, state.seed);
+      const fight = initFight(setup, seed);
+
+      // Insert battle sorted by tile id
+      state.battles.push({ tile: tile.id, fight });
+      state.battles.sort((a, b) => (a.tile < b.tile ? -1 : a.tile > b.tile ? 1 : 0));
+
+      const attackers = attackerArmies.map(a => a.id).sort();
+      state.events.push({ t: 'battleOpened', tile: tile.id, attackers });
+    }
   }
 }
 
@@ -186,6 +305,12 @@ function applyDispatch(
   army.target = c.toTile;
   army.route = route;
   army.travelGauge = 0;
+
+  // Record the gate: the edge of the target tile facing the launch tile.
+  // launch tile is the last owned tile in the route (second-to-last element, or army.tile if route=[toTile]).
+  const launchId = route.length >= 2 ? route[route.length - 2]! : army.tile;
+  army.gate = gateOf(toTile, launchId);
+
   state.events.push({ t: 'dispatched', armyId: army.id, toTile: c.toTile });
 }
 

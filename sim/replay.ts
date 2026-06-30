@@ -1,5 +1,6 @@
 import type { FightResult, ReplayBundle, ReplayResult, ScriptedFightBundle, ConquestBundle } from '../shared/types';
 import { runTileFight, initFight, stepFight, fightResult, joinFight, orderRetreat } from './tile-fight';
+import type { MapState } from './conquest-map';
 import { initConquest, advance, hashMap } from './conquest-map';
 
 // ── Conquest replay (v3) ─────────────────────────────────────────────────────
@@ -11,7 +12,7 @@ const CONQUEST_MAX_TICKS = 100_000;
 // Quiescent when no army is travelling/retreating AND no scripted command
 // remains at atTick >= state.totalTicks.
 export function runScriptedConquest(bundle: ConquestBundle): { hash: string; ticks: number } {
-  const s = initConquest(bundle.setup);
+  const s: MapState = initConquest(bundle.setup, bundle.seed);
   const cmdsAt = (t: number) => bundle.script.filter((a) => a.atTick === t).flatMap((a) => a.commands);
   const pending = () =>
     s.armies.some((a) => a.state === 'travelling' || a.state === 'retreating') ||

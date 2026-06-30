@@ -62,3 +62,5 @@ export const LEAN_VALVE_DELTA = 60;        // hotheaded: VALVE_TICKS−DELTA, ca
 // Conquest-map constants:
 export const TRAVEL_THRESHOLD = 100;
 export const MAX_COMMIT = 4;
+export const STEPS_PER_MAP_TICK = 4;
+export const DEFAULT_FIGHT_GRID = { width: 8, height: 8, blocked: [] as { x: number; y: number }[] };
