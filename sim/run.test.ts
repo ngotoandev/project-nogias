@@ -318,3 +318,52 @@ it('boon does not bleed into the setup', () => {
   for (let i = 0; i < 40; i++) runTick(run, []);
   expect(boonSetup.armies[0]!.units[0]!.attrs.str).toBe(5); // setup untouched (army attrs were cloned at initConquest)
 });
+
+// ── v4 parity pin tests for muster + boon fixtures (Task 3) ──────────────────
+// Mirror the exact bundles used in tools/parity/fixtures.mjs.
+
+it('run-muster-seed1 pin: capture undefended muster tile spawns reserve army muster-t1 → active (hash 205ee9dc)', () => {
+  const r = runScriptedRun({
+    version: 4,
+    seed: 1,
+    setup: {
+      tiles: [
+        { id: 't0', type: 'start',  owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+        { id: 't1', type: 'muster', owner: 'enemy',  neighbors: { W: 't0' }, garrison: [],
+          muster: [
+            { id: 'm1', side: 'A', attackKind: 'melee', attrs: { str: 4, agi: 4, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
+          ] },
+      ],
+      armies: [{
+        id: 'a1',
+        units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+        tile: 't0',
+      }],
+    },
+    script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] }],
+  });
+  expect(r.status).toBe('active');
+  expect(r.hash).toBe('205ee9dc');
+});
+
+it('run-boon-seed1 pin: capture undefended boon tile buffs str +3 → derived HP rises → active (hash 2064aa00)', () => {
+  const r = runScriptedRun({
+    version: 4,
+    seed: 1,
+    setup: {
+      tiles: [
+        { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+        { id: 't1', type: 'boon',  owner: 'enemy',  neighbors: { W: 't0' }, garrison: [],
+          boon: { attr: 'str', amount: 3 } },
+      ],
+      armies: [{
+        id: 'a1',
+        units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+        tile: 't0',
+      }],
+    },
+    script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] }],
+  });
+  expect(r.status).toBe('active');
+  expect(r.hash).toBe('2064aa00');
+});

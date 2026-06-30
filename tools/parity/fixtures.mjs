@@ -16,6 +16,8 @@
 //   run-won-seed1                    (561ab142) — strong attacker dispatched to lightly-garrisoned boss tile → won
 //   run-rest-heal-seed1              (930e2fc9) — wounded a1 heals on rest tile while a2 travels to undefended enemy tile
 //   run-extract-seed1                (5b653528) — extract command at tick 0 → extracted
+//   run-muster-seed1                 (205ee9dc) — player captures undefended enemy muster tile; spawns muster-t1 reserve army; quiesces active
+//   run-boon-seed1                   (2064aa00) — player captures undefended enemy boon tile; str+3 → derived HP rises; quiesces active
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {
@@ -370,6 +372,62 @@ export const FIXTURES = [
       },
       script: [
         { atTick: 0, commands: [{ t: 'extract' }] },
+      ],
+    },
+  },
+  {
+    // run-muster-seed1: player 'start' tile t0 E-adjacent to undefended enemy 'muster' tile t1.
+    // t1.muster carries one predefined unit (m1). Script dispatches a1 to t1 at tick 0.
+    // Fight-free capture; applyCaptureEffects spawns reserve army 'muster-t1' garrisoned at t1.
+    // Run quiesces 'active' (muster tile is not a boss). Hash reflects the spawned reserve army.
+    name: 'run-muster-seed1',
+    expectedHash: '205ee9dc',
+    bundle: {
+      version: 4,
+      seed: 1,
+      setup: {
+        tiles: [
+          { id: 't0', type: 'start',  owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+          { id: 't1', type: 'muster', owner: 'enemy',  neighbors: { W: 't0' }, garrison: [],
+            muster: [
+              { id: 'm1', side: 'A', attackKind: 'melee', attrs: { str: 4, agi: 4, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
+            ] },
+        ],
+        armies: [{
+          id: 'a1',
+          units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+          tile: 't0',
+        }],
+      },
+      script: [
+        { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] },
+      ],
+    },
+  },
+  {
+    // run-boon-seed1: player 'start' tile t0 E-adjacent to undefended enemy 'boon' tile t1.
+    // t1.boon = { attr: 'str', amount: 3 }. Script dispatches a1 to t1 at tick 0.
+    // Fight-free capture; applyCaptureEffects adds +3 str to every player unit (u1: str 5→8),
+    // raising its derived maxHp. Run quiesces 'active' (boon tile is not a boss). Hash reflects buff.
+    name: 'run-boon-seed1',
+    expectedHash: '2064aa00',
+    bundle: {
+      version: 4,
+      seed: 1,
+      setup: {
+        tiles: [
+          { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+          { id: 't1', type: 'boon',  owner: 'enemy',  neighbors: { W: 't0' }, garrison: [],
+            boon: { attr: 'str', amount: 3 } },
+        ],
+        armies: [{
+          id: 'a1',
+          units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+          tile: 't0',
+        }],
+      },
+      script: [
+        { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] },
       ],
     },
   },
