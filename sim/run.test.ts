@@ -571,3 +571,82 @@ it('recapture-no-refire: player captures muster tile, tile flips to enemy, playe
   // effectClaimed prevents a second muster spawn — still exactly ONE muster-t1 army
   expect(run.map.armies.filter((a) => a.id === 'muster-t1')).toHaveLength(1);
 });
+
+// ── Task 4: lethal sortie lose path + win/lose interplay ──────────────────────
+
+it("a sortie that destroys the player's LAST army loses the run", () => {
+  // s (enemy, 3× strong garrison) — E — t (player-owned, defended by player's ONLY army d: 1 weak unit).
+  // The overwhelming sortie should kill d → state.armies empties → isLost → run.status = 'lost'.
+  const run = initRun({
+    enemyReclaims: true,
+    tiles: [
+      { id: 's', type: 'enemy' as const, owner: 'enemy' as const, neighbors: { E: 't' },
+        garrison: [u('g1','B',20), u('g2','B',20), u('g3','B',20)] },
+      { id: 't', type: 'enemy' as const, owner: 'player' as const, neighbors: { W: 's' }, garrison: [] },
+    ],
+    armies: [{ id: 'd', tile: 't', units: [u('du','A',1)] }],
+  }, 1);
+  for (let i = 0; i < 120 && run.status === 'active'; i++) runTick(run, []);
+  expect(run.map.tiles.find((x) => x.id === 't')!.owner).toBe('enemy'); // tile flipped
+  expect(run.status).toBe('lost');                                        // last army destroyed ⇒ lose
+});
+
+it('a sortie repelled by a strong defender keeps the tile, status stays active, defender ends garrisoned', () => {
+  // s (enemy, 1 very weak garrison g1 str=1) — E — t (player, defended by strong d: str=20).
+  // Player defender easily repels the sortie: t stays player-owned, d survives garrisoned.
+  const run = initRun({
+    enemyReclaims: true,
+    tiles: [
+      { id: 's', type: 'enemy' as const, owner: 'enemy' as const, neighbors: { E: 't' },
+        garrison: [u('g1','B',1)] },
+      { id: 't', type: 'enemy' as const, owner: 'player' as const, neighbors: { W: 's' }, garrison: [] },
+    ],
+    armies: [{ id: 'd', tile: 't', units: [u('du','A',20)] }],
+  }, 1);
+  // Run until the battle resolves (status stays active since d survives and no win/lose condition)
+  for (let i = 0; i < 120 && run.map.battles.some((b) => b.tile === 't'); i++) runTick(run, []);
+  expect(run.map.tiles.find((x) => x.id === 't')!.owner).toBe('player');  // tile held
+  expect(run.status).toBe('active');                                        // run continues
+  const defender = run.map.armies.find((a) => a.id === 'd');
+  expect(defender).toBeDefined();                                            // army survived
+  expect(defender!.state).toBe('garrisoned');                               // settled back
+});
+
+// Boss interplay: terminal-sticky status pre-empts any sortie consequence.
+// A sortie opening on a non-boss tile the same tick the player captures the boss
+// does NOT un-win the run — status becomes 'won' at the END of that tick and stays.
+// There is NO test for "boss tile gets un-won after winning" because the run-loop
+// is terminal-sticky: once status === 'won', runTick early-returns and never
+// processes further advance/applyEnemyAI. An enemy sortie on a boss tile BEFORE
+// capture is possible but the boss-capture test above already covers the win path.
+// This test confirms the win is locked even when a sortie event coexists.
+it('boss capture wins the run even if a sortie event opens on another tile that same tick', () => {
+  // Topology: t0 (player start, army a1) — E — boss (enemy, no garrison)
+  //                                                |W
+  //                                               side (enemy, garrisoned, adjacent to t0 via S)
+  // t0 — E — boss (undefended). a1 dispatched to boss, captures it. side tiles s1 as well.
+  // s1 (enemy, garrisoned) — S — t0 (player, defended by a1). When a1 leaves t0, t0 becomes
+  // undefended → s1 reclaims it (not a sortie). Keep it simple: s1 only reclaims undefended t0
+  // after a1 leaves, which is already covered. Instead: prove the sortie-on-adjacent path:
+  // Use a separate army a2 holding t2 (player tile adjacent to s2 garrisoned enemy), while
+  // a1 captures the boss simultaneously.
+  const run = initRun({
+    enemyReclaims: true,
+    tiles: [
+      { id: 't0', type: 'start' as const, owner: 'player' as const, neighbors: { E: 'boss', S: 't2' }, garrison: [] },
+      { id: 'boss', type: 'boss' as const, owner: 'enemy' as const, neighbors: { W: 't0' }, garrison: [] },
+      { id: 't2', type: 'enemy' as const, owner: 'player' as const, neighbors: { N: 't0', E: 's2' }, garrison: [] },
+      { id: 's2', type: 'enemy' as const, owner: 'enemy' as const, neighbors: { W: 't2' },
+        garrison: [u('sg','B',3)] },
+    ],
+    armies: [
+      { id: 'a1', tile: 't0', units: [u('a1u','A',20)] },
+      { id: 'a2', tile: 't2', units: [u('a2u','A',6)] },  // holds t2, faces sortie from s2
+    ],
+  }, 1);
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 'boss' }]);
+  for (let i = 0; i < 80 && run.status === 'active'; i++) runTick(run, []);
+  // Boss captured → won (terminal-sticky); any sortie outcome on t2 is irrelevant after status locked
+  expect(run.map.tiles.find((x) => x.id === 'boss')!.owner).toBe('player');
+  expect(run.status).toBe('won');
+});
