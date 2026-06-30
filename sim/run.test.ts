@@ -111,4 +111,21 @@ it('no healing off a rest tile / on an enemy-owned rest tile / when not garrison
   const run = initRun(enemyRest, 1);
   runTick(run, []);
   expect(run.map.armies[0]!.units[0]!.startHp).toBe(3); // unchanged
+
+  // non-rest tile type: wounded unit on a player-owned 'start' tile ⇒ no heal
+  const nonRestSetup: MapSetup = {
+    tiles: [{ id: 't0', type: 'start', owner: 'player', neighbors: {}, garrison: [] }],
+    armies: [{ id: 'a1', tile: 't0', units: [
+      { id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 }, startHp: 3 },
+    ] }],
+  };
+  const runNonRest = initRun(nonRestSetup, 1);
+  runTick(runNonRest, []);
+  expect(runNonRest.map.armies[0]!.units[0]!.startHp).toBe(3); // unchanged — tile.type !== 'rest'
+
+  // not garrisoned: wounded unit on a player-owned rest tile but army is travelling ⇒ no heal
+  const runNotGarrisoned = initRun(restSetup, 1);
+  runNotGarrisoned.map.armies[0]!.state = 'travelling';
+  runTick(runNotGarrisoned, []);
+  expect(runNotGarrisoned.map.armies[0]!.units[0]!.startHp).toBe(3); // unchanged — state !== 'garrisoned'
 });
