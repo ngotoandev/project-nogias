@@ -19,3 +19,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Superpowers SDD scratch (briefs, reports, ledger, review packages)
+.superpowers/sdd/
