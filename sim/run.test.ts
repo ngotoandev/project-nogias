@@ -228,3 +228,51 @@ it('run-extract-seed1 pin: extract at tick 0 → extracted (hash 5b653528)', () 
   expect(r.status).toBe('extracted');
   expect(r.hash).toBe('5b653528');
 });
+
+// ── Muster tile tests (Task 1) ────────────────────────────────────────────────
+
+const musterSetup: MapSetup = {
+  tiles: [
+    { id: 't0', type: 'start',  owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+    { id: 't1', type: 'muster', owner: 'enemy',  neighbors: { W: 't0' }, garrison: [],
+      muster: [
+        { id: 'm1', side: 'A', attackKind: 'melee', attrs: { str: 4, agi: 4, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
+      ] },
+  ],
+  armies: [{ id: 'a1', tile: 't0', units: [
+    { id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
+  ] }],
+};
+
+it('capturing a muster tile spawns a garrisoned reserve army (muster-<id>) with the tile units, once', () => {
+  const run = initRun(musterSetup, 1);
+  expect(run.map.armies.some((a) => a.id === 'muster-t1')).toBe(false); // not before capture
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
+  for (let i = 0; i < 40 && !run.map.tiles.find((t) => t.id === 't1')!.owner.includes('player'); i++) runTick(run, []);
+  const mustered = run.map.armies.find((a) => a.id === 'muster-t1');
+  expect(mustered).toBeDefined();
+  expect(mustered!.state).toBe('garrisoned');
+  expect(mustered!.tile).toBe('t1');
+  expect(mustered!.units.map((u) => u.id)).toEqual(['m1']);
+  const countAfter = run.map.armies.filter((a) => a.id === 'muster-t1').length;
+  for (let i = 0; i < 5; i++) runTick(run, []);
+  expect(run.map.armies.filter((a) => a.id === 'muster-t1').length).toBe(countAfter); // fires once
+});
+
+it('a non-muster capture spawns no reserve army', () => {
+  // same setup but t1.type = 'enemy', no muster field → after capture, no muster-* army exists
+  const s = JSON.parse(JSON.stringify(musterSetup)); s.tiles[1].type = 'enemy'; delete s.tiles[1].muster;
+  const run = initRun(s, 1);
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
+  for (let i = 0; i < 40; i++) runTick(run, []);
+  expect(run.map.armies.some((a) => a.id.startsWith('muster-'))).toBe(false);
+});
+
+it('cloneUnitSpec isolates the mustered army from the setup', () => {
+  const run = initRun(musterSetup, 1);
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
+  for (let i = 0; i < 40 && !run.map.armies.some((a) => a.id === 'muster-t1'); i++) runTick(run, []);
+  run.map.armies.find((a) => a.id === 'muster-t1')!.units[0]!.attrs.str = 999;
+  const origSpec = musterSetup.tiles[1]!.muster![0]!;
+  expect(origSpec.attrs.str).toBe(4); // setup untouched
+});

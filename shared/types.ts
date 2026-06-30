@@ -112,7 +112,8 @@ export interface ReplayResult {
 export type MapEdge = 'N' | 'S' | 'E' | 'W';
 export type TileOwner = 'player' | 'enemy' | 'neutral';
 export type TileType = 'start' | 'enemy' | 'elite' | 'boss' | 'rest' | 'cache' | 'event' | 'recruit' | 'muster' | 'boon' | 'mysterious';
-export interface MapTile { id: string; type: TileType; owner: TileOwner; neighbors: { N?: string; S?: string; E?: string; W?: string }; garrison: UnitSpec[]; }
+export interface BoonSpec { attr: 'str' | 'agi' | 'int' | 'lck'; amount: number; }
+export interface MapTile { id: string; type: TileType; owner: TileOwner; neighbors: { N?: string; S?: string; E?: string; W?: string }; garrison: UnitSpec[]; muster?: UnitSpec[]; boon?: BoonSpec; }
 export type ArmyState = 'garrisoned' | 'travelling' | 'contested' | 'retreating';
 export interface Army { id: string; units: UnitSpec[]; tile: string; state: ArmyState; target?: string; route?: string[]; travelGauge: number; gate?: MapEdge; retreatOrdered?: boolean; /* transient — NOT hashed */ }
 export interface MapSetup { tiles: MapTile[]; armies: { id: string; units: UnitSpec[]; tile: string }[]; }
