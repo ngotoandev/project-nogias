@@ -16,7 +16,8 @@ export function runScriptedConquest(bundle: ConquestBundle): { hash: string; tic
   const cmdsAt = (t: number) => bundle.script.filter((a) => a.atTick === t).flatMap((a) => a.commands);
   const pending = () =>
     s.armies.some((a) => a.state === 'travelling' || a.state === 'retreating') ||
-    bundle.script.some((a) => a.atTick >= s.totalTicks);
+    bundle.script.some((a) => a.atTick >= s.totalTicks) ||
+    s.battles.some((b) => !b.fight.outcome);
   while (pending() && s.totalTicks < CONQUEST_MAX_TICKS) advance(s, cmdsAt(s.totalTicks));
   return { hash: hashMap(s), ticks: s.totalTicks };
 }

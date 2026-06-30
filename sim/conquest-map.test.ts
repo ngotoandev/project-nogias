@@ -439,3 +439,56 @@ it('arriving at a DEFENDED tile opens a battle: attacker units side A (ids armyI
   expect(ms.seed).toBe(0);
   expect(Array.isArray(ms.battles)).toBe(true);
 });
+
+// ── Task 3: Battle stepping ──────────────────────────────────────────────────
+
+// Strong attacker (high str+agi) vs one very weak garrison unit.
+// The attacker should decisively win within a modest number of map ticks.
+function setupStrongAttackerWeakGarrison(): MapSetup {
+  return {
+    tiles: [
+      { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+      { id: 't1', type: 'cache', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
+      {
+        id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' },
+        garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+      },
+    ],
+    armies: [{
+      id: 'a1',
+      units: [{ id: 'a1u', side: 'A', attackKind: 'melee', attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }],
+      tile: 't0',
+    }],
+  };
+}
+
+it('advance steps active battles by STEPS_PER_MAP_TICK; a one-sided battle reaches an outcome', () => {
+  const s = initConquest(setupStrongAttackerWeakGarrison());
+  // Dispatch attacker: route ['t1','t2']. Army agi=20 → tempo = 10+20=30; TRAVEL_THRESHOLD=100 → hop every ceil(100/30)≈4 ticks.
+  advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]);
+
+  // Advance until battle opens (army arrives at t2 — the defended tile)
+  const SAFETY = 60;
+  let ticks = 0;
+  while (ticks < SAFETY && s.battles.length === 0) {
+    advance(s, []);
+    ticks++;
+  }
+  expect(s.battles.length).toBe(1);
+  expect(s.battles[0]!.tile).toBe('t2');
+
+  // Now advance until the battle resolves (outcome set) or safety cap
+  while (ticks < SAFETY && !s.battles[0]!.fight.outcome) {
+    advance(s, []);
+    ticks++;
+  }
+
+  const battle = s.battles[0]!;
+  // Battle must have been stepped (progress evidence)
+  expect(battle.fight.totalTicks).toBeGreaterThan(0);
+  // Battle must have resolved — strong A beats weak garrison
+  expect(battle.fight.outcome).not.toBeNull();
+  expect(battle.fight.outcome!.winner).toBe('A');
+  // Owner NOT asserted (Task 4); battle remains in state.battles
+  expect(s.battles.length).toBe(1);
+});

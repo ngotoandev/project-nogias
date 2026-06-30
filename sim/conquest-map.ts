@@ -1,9 +1,9 @@
 import type { MapSetup, MapCommand, MapEdge, MapTile, Army, UnitSpec, FightSetup, GridSpec, MapEvent } from '../shared/types';
 import type { FightState } from './tile-fight';
-import { initFight } from './tile-fight';
+import { initFight, stepFight } from './tile-fight';
 import { fnv1a } from './hash';
 import { deriveStats } from './stats';
-import { MAX_COMMIT, TRAVEL_THRESHOLD, DEFAULT_FIGHT_GRID } from '../shared/config';
+import { MAX_COMMIT, TRAVEL_THRESHOLD, DEFAULT_FIGHT_GRID, STEPS_PER_MAP_TICK } from '../shared/config';
 
 const cloneSpec = (u: UnitSpec): UnitSpec => ({
   ...u,
@@ -354,6 +354,14 @@ export function advance(state: MapState, commands: MapCommand[]): MapState {
         resolveArrival(state, army);
         break; // reached destination
       }
+    }
+  }
+
+  // Battle-step phase: step each active battle STEPS_PER_MAP_TICK times per map tick.
+  // Battles are iterated in tile-id order (state.battles is kept sorted by tile id).
+  for (const b of state.battles) {
+    for (let k = 0; k < STEPS_PER_MAP_TICK && !b.fight.outcome; k++) {
+      stepFight(b.fight);
     }
   }
 

@@ -303,8 +303,9 @@ describe('runScriptedConquest', () => {
     const r = runScriptedConquest(bundle);
     // Pinned hash: must equal the contested golden exactly.
     // The contested seam now opens a battle (battleOpened event), not an inert contested event.
-    // Hash is unchanged because hashMap does not include active battles (that changes in a later task, which will re-pin this).
-    expect(r.hash).toBe('f6abc10b');
+    // Re-pinned by Task 3: runScriptedConquest quiescence now waits for all battles to resolve,
+    // so totalTicks increases (battles are stepped until outcome), changing the hash.
+    expect(r.hash).toBe('f8abc431');
     expect(r.ticks).toBeGreaterThan(0);
   });
 
