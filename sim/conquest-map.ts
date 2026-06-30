@@ -477,55 +477,84 @@ export function advance(state: MapState, commands: MapCommand[]): MapState {
   const resolved = state.battles.filter((b) => b.fight.outcome !== null);
   for (const b of resolved) {
     const tile = tileById(state, b.tile)!;
-    // All contested attacker armies targeting this tile
-    const attackers = state.armies.filter((a) => a.target === b.tile && a.state === 'contested');
     const winner = b.fight.outcome!.winner;
 
-    if (winner === 'A') {
-      // Attacker wins: capture the tile.
-      // Reconcile each attacker army — write surviving units' HP back, drop dead units.
-      for (const army of attackers) {
-        reconcileArmy(army, b.fight);
-      }
-      tile.owner = 'player';
-      tile.garrison = []; // garrison wiped
-      // Garrison-surviving armies onto the tile; remove zero-survivor armies.
-      for (const army of attackers) {
-        if (army.units.length === 0) {
-          // All units died — remove army from state.armies
+    if (b.attackerOwner === 'player') {
+      // All contested attacker armies targeting this tile
+      const attackers = state.armies.filter((a) => a.target === b.tile && a.state === 'contested');
+
+      if (winner === 'A') {
+        // Attacker wins: capture the tile.
+        // Reconcile each attacker army — write surviving units' HP back, drop dead units.
+        for (const army of attackers) {
+          reconcileArmy(army, b.fight);
+        }
+        tile.owner = 'player';
+        tile.garrison = []; // garrison wiped
+        // Garrison-surviving armies onto the tile; remove zero-survivor armies.
+        for (const army of attackers) {
+          if (army.units.length === 0) {
+            // All units died — remove army from state.armies
+            const idx = state.armies.indexOf(army);
+            if (idx !== -1) state.armies.splice(idx, 1);
+          } else {
+            army.state = 'garrisoned';
+            army.tile = b.tile;
+            army.target = undefined;
+            army.gate = undefined;
+            army.route = undefined;
+          }
+        }
+        // Use first surviving attacker army (winner==='A' guarantees at least one)
+        const firstSurvivor = attackers.find((a) => a.units.length > 0);
+        state.events.push({ t: 'captured', tile: b.tile, by: firstSurvivor?.id ?? '-' });
+      } else {
+        // Defender wins (winner==='B') OR timeout/draw.
+        // A stalemated attacker is treated as repelled and its units are lost — acceptable for alpha.
+        // Remove all attacking armies.
+        for (const army of attackers) {
           const idx = state.armies.indexOf(army);
           if (idx !== -1) state.armies.splice(idx, 1);
-        } else {
-          army.state = 'garrisoned';
-          army.tile = b.tile;
-          army.target = undefined;
-          army.gate = undefined;
-          army.route = undefined;
         }
+        // Rebuild garrison from surviving side-B fight units, matched against original garrison specs.
+        const origGarrison = tile.garrison.slice(); // capture originals before overwriting
+        const newGarrison: UnitSpec[] = [];
+        for (const f of b.fight.units) {
+          if (f.side !== 'B' || f.hp <= 0) continue;
+          const origId = f.id.slice('garrison#'.length);
+          const orig = origGarrison.find((g) => g.id === origId);
+          if (!orig) throw new Error(`reconcileGarrison: no original spec found for garrison unit id '${origId}' (fight id '${f.id}')`);
+          newGarrison.push({ ...orig, startHp: f.hp });
+        }
+        tile.garrison = newGarrison;
+        state.events.push({ t: 'repelled', tile: b.tile });
       }
-      // Use first surviving attacker army (winner==='A' guarantees at least one)
-      const firstSurvivor = attackers.find((a) => a.units.length > 0);
-      state.events.push({ t: 'captured', tile: b.tile, by: firstSurvivor?.id ?? '-' });
-    } else {
-      // Defender wins (winner==='B') OR timeout/draw.
-      // A stalemated attacker is treated as repelled and its units are lost — acceptable for alpha.
-      // Remove all attacking armies.
-      for (const army of attackers) {
-        const idx = state.armies.indexOf(army);
-        if (idx !== -1) state.armies.splice(idx, 1);
+    } else { // attackerOwner === 'enemy' (sortie): playerArmies are the DEFENDERS (side B); attacker = enemy garrison (side A)
+      const playerArmies = state.armies.filter((a) => a.target === b.tile && a.state === 'contested');
+      if (winner === 'A') {                       // enemy wins — LETHAL
+        tile.owner = 'enemy';
+        const orig = b.attackerGarrison ?? [];
+        const newGarrison: UnitSpec[] = [];
+        for (const f of b.fight.units) {           // surviving side-A enemy units → tile's new garrison
+          if (f.side !== 'A' || f.hp <= 0) continue;
+          const origId = f.id.slice('garrison#'.length);
+          const og = orig.find((g) => g.id === origId);
+          if (!og) throw new Error(`sortie outcome: no original spec for '${origId}' (fight id '${f.id}')`);
+          newGarrison.push({ ...og, startHp: f.hp });
+        }
+        tile.garrison = newGarrison;
+        for (const army of playerArmies) {         // defending armies destroyed
+          const idx = state.armies.indexOf(army); if (idx !== -1) state.armies.splice(idx, 1);
+        }
+        state.events.push({ t: 'captured', tile: b.tile, by: '-' }); // enemy capture (by '-' = enemy/no army)
+      } else {                                     // player repels (B win / timeout / draw)
+        for (const army of playerArmies) reconcileArmy(army, b.fight);
+        for (const army of playerArmies) {
+          if (army.units.length === 0) { const idx = state.armies.indexOf(army); if (idx !== -1) state.armies.splice(idx, 1); }
+          else { army.state = 'garrisoned'; army.target = undefined; army.gate = undefined; army.route = undefined; }
+        }
+        state.events.push({ t: 'repelled', tile: b.tile }); // attacker (enemy sortie) discarded; source already empty
       }
-      // Rebuild garrison from surviving side-B fight units, matched against original garrison specs.
-      const origGarrison = tile.garrison.slice(); // capture originals before overwriting
-      const newGarrison: UnitSpec[] = [];
-      for (const f of b.fight.units) {
-        if (f.side !== 'B' || f.hp <= 0) continue;
-        const origId = f.id.slice('garrison#'.length);
-        const orig = origGarrison.find((g) => g.id === origId);
-        if (!orig) throw new Error(`reconcileGarrison: no original spec found for garrison unit id '${origId}' (fight id '${f.id}')`);
-        newGarrison.push({ ...orig, startHp: f.hp });
-      }
-      tile.garrison = newGarrison;
-      state.events.push({ t: 'repelled', tile: b.tile });
     }
   }
   // Remove all resolved battles in one pass.

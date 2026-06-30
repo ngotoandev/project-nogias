@@ -844,6 +844,32 @@ const u = (id: string, side: 'A' | 'B', str: number, agi = 5): UnitSpec => ({
   attrs: { str, agi, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 },
 });
 
+// ── Task 2: enemy sortie outcome — WIN and REPEL ─────────────────────────────
+
+it('enemy sortie WIN: tile flips to enemy, attacker garrison installed, defender army destroyed', () => {
+  const state = initConquest({ tiles: [
+    { id: 's', type: 'enemy', owner: 'enemy', neighbors: { E: 't' }, garrison: [u('g1','B',20), u('g2','B',20), u('g3','B',20)] },
+    { id: 't', type: 'enemy', owner: 'player', neighbors: { W: 's' }, garrison: [] },
+  ], armies: [{ id: 'd', tile: 't', units: [u('du','A',1)] }] }, 1);
+  openSortie(state, state.tiles.find(x=>x.id==='s')!, state.tiles.find(x=>x.id==='t')!);
+  for (let i = 0; i < 80 && state.battles.length; i++) advance(state, []);
+  expect(state.tiles.find(x=>x.id==='t')!.owner).toBe('enemy');        // flipped to enemy
+  expect(state.tiles.find(x=>x.id==='t')!.garrison.length).toBeGreaterThan(0); // enemy survivors installed
+  expect(state.armies.find(a=>a.id==='d')).toBeUndefined();            // defender destroyed (lethal)
+});
+
+it('enemy sortie REPELLED: tile stays player, defender holds (attrited), attacker discarded', () => {
+  // strong defender (str 20 ×3) vs weak sortie (str 1) → defender (side B) wins
+  const state = initConquest({ tiles: [
+    { id: 's', type: 'enemy', owner: 'enemy', neighbors: { E: 't' }, garrison: [u('g1','B',1)] },
+    { id: 't', type: 'enemy', owner: 'player', neighbors: { W: 's' }, garrison: [] },
+  ], armies: [{ id: 'd', tile: 't', units: [u('d1','A',20), u('d2','A',20), u('d3','A',20)] }] }, 1);
+  openSortie(state, state.tiles.find(x=>x.id==='s')!, state.tiles.find(x=>x.id==='t')!);
+  for (let i = 0; i < 80 && state.battles.length; i++) advance(state, []);
+  expect(state.tiles.find(x=>x.id==='t')!.owner).toBe('player');       // held
+  expect(state.armies.find(a=>a.id==='d')!.state).toBe('garrisoned');  // back to holding
+});
+
 it('openSortie opens an enemy-attacker battle: enemy garrison side A, player army side B, source emptied', () => {
   const state = initConquest({ tiles: [
     { id: 's', type: 'enemy', owner: 'enemy', neighbors: { E: 't' }, garrison: [u('g1','B',5), u('g2','B',5)] },
