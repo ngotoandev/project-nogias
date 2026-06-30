@@ -64,3 +64,6 @@ export const TRAVEL_THRESHOLD = 100;
 export const MAX_COMMIT = 4;
 export const STEPS_PER_MAP_TICK = 4;
 export const DEFAULT_FIGHT_GRID = { width: 8, height: 8, blocked: [] as { x: number; y: number }[] };
+// Run-loop constants:
+export const REST_HEAL_PER_TICK = 5;
+export const RUN_MAX_TICKS = 100_000;
