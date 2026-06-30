@@ -36,6 +36,24 @@ it('hashMap changes when an owner changes', () => {
   s.tiles.find(t => t.id === 't1')!.owner = 'player';
   expect(hashMap(s)).not.toBe(h0);
 });
+it('hashMap is sensitive to army unit startHp (rosters+HP folded in)', () => {
+  // Two states identical except one army unit has a wounded startHp vs full HP.
+  // This proves the roster+HP extension is wired — not a vacuous check.
+  const s1 = initConquest(setup());
+  const s2 = initConquest(setup());
+  // s2: wound the army's unit by setting startHp to a lower value
+  s2.armies[0]!.units[0]!.startHp = 1;
+  expect(hashMap(s1)).not.toBe(hashMap(s2));
+});
+it('hashMap is sensitive to garrison unit startHp (tile garrison HP folded in)', () => {
+  // Two states identical except the garrison unit's startHp differs.
+  // Proves the garrison-roster+HP extension is wired.
+  const s1 = initConquest(setup());
+  const s2 = initConquest(setup());
+  // s2: wound the garrison unit at t2 by setting startHp to a lower value
+  s2.tiles.find(t => t.id === 't2')!.garrison[0]!.startHp = 1;
+  expect(hashMap(s1)).not.toBe(hashMap(s2));
+});
 it('initConquest deep-copies: mutating returned state does not bleed into setup input', () => {
   const input = setup();
   const origArmyStr = input.armies[0]!.units[0]!.attrs.str;

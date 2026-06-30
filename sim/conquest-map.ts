@@ -1,7 +1,7 @@
 import type { MapSetup, MapCommand, MapEdge, MapTile, Army, UnitSpec, FightSetup, GridSpec, MapEvent } from '../shared/types';
 import type { FightState } from './tile-fight';
 import { initFight, stepFight, joinFight, orderRetreat } from './tile-fight';
-import { fnv1a } from './hash';
+import { fnv1a, hashFight } from './hash';
 import { deriveStats } from './stats';
 import { MAX_COMMIT, TRAVEL_THRESHOLD, DEFAULT_FIGHT_GRID, STEPS_PER_MAP_TICK } from '../shared/config';
 
@@ -537,9 +537,17 @@ export function advance(state: MapState, commands: MapCommand[]): MapState {
 
 // ── hashMap ──────────────────────────────────────────────────────────────────
 
+const byId = (a: { id: string }, b: { id: string }): number =>
+  a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+
 export function hashMap(state: MapState): string {
-  const tilePart = state.tiles.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map((t) => `${t.id}:${t.owner}`).join(',');
-  const armyPart = state.armies.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    .map((a) => `${a.id}:${a.tile}:${a.state}:${a.target ?? '-'}`).join(',');
-  return fnv1a(`${tilePart}#${armyPart}#${state.totalTicks}`);
+  const tilePart = [...state.tiles].sort(byId).map((t) =>
+    `${t.id}:${t.owner}:${t.garrison.map(g => `${g.id}@${g.startHp ?? deriveStats(g.attrs, g.attackKind).maxHp}`).join('/')}`
+  ).join(',');
+  const armyPart = [...state.armies].sort(byId).map((a) =>
+    `${a.id}:${a.tile}:${a.state}:${a.target ?? '-'}:${a.units.map(u => `${u.id}@${u.startHp ?? deriveStats(u.attrs, u.attackKind).maxHp}`).join('/')}`
+  ).join(',');
+  const battlePart = [...state.battles].sort((x, y) => x.tile < y.tile ? -1 : x.tile > y.tile ? 1 : 0)
+    .map((b) => `${b.tile}=${hashFight(b.fight.units, b.fight.totalTicks)}`).join(',');
+  return fnv1a(`${tilePart}#${armyPart}#${battlePart}#${state.totalTicks}`);
 }

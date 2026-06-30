@@ -278,7 +278,7 @@ describe('runScriptedConquest', () => {
     const r = runScriptedConquest(bundle);
     // Pinned hash: must equal the capture golden exactly.
     // Fails if the dispatch is rejected (no-op) or the capture path does not fire.
-    expect(r.hash).toBe('503f1a30');
+    expect(r.hash).toBe('356ce892');
     expect(r.ticks).toBeGreaterThan(0);
   });
 
@@ -308,7 +308,8 @@ describe('runScriptedConquest', () => {
     // Re-pinned by Task 4: battle outcome is now applied — army stops being contested (it becomes
     // garrisoned after capture), tile owner flips to 'player'. Both change the hashMap inputs,
     // producing a new hash. This is a UNIT TEST hash, not a parity fixture.
-    expect(r.hash).toBe('523f1d56');
+    // Re-pinned by Task 7: hashMap now folds in army/garrison rosters + HP.
+    expect(r.hash).toBe('442e11b1');
     expect(r.ticks).toBeGreaterThan(0);
   });
 
@@ -321,7 +322,7 @@ describe('runScriptedConquest', () => {
     };
     const r = runReplay(bundle);
     // Pinned: same capture bundle as runScriptedConquest, must equal the capture golden.
-    expect(r.hash).toBe('503f1a30');
+    expect(r.hash).toBe('356ce892');
     expect(r.ticks).toBeGreaterThan(0);
     expect(r.winner).toBeUndefined();
     expect(r.endReason).toBeUndefined();
@@ -338,5 +339,71 @@ describe('runScriptedConquest', () => {
     // After quiescence, army must be garrisoned (captured or contested)
     // Ticks must be finite (well under CONQUEST_MAX_TICKS=100_000)
     expect(r.ticks).toBeLessThan(1000);
+  });
+
+  // ── Task 7: dispatch → travel → fight → CAPTURE (strong attacker wins) ─────
+  //
+  // Map: t0(player) -E→ t1(player) -E→ t2(enemy, weak garrison).
+  // Strong attacker: str=20, agi=20, int=5, lck=5. Weak garrison: str=1, agi=1.
+  // The attacker defeats the garrison decisively; tile captured with HP attrition.
+  // Hash is pinned after running once; fails on a no-op or wrong outcome.
+  it('runScriptedConquest: dispatch → travel → fight → CAPTURE (deterministic hash)', () => {
+    const mapStrongAttackerVsWeakGarrison: MapSetup = {
+      tiles: [
+        { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+        { id: 't1', type: 'cache', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
+        {
+          id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' },
+          garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+        },
+      ],
+      armies: [{
+        id: 'a1',
+        units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }],
+        tile: 't0',
+      }],
+    };
+    const r = runScriptedConquest({
+      version: 3, seed: 1,
+      setup: mapStrongAttackerVsWeakGarrison,
+      script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] }],
+    });
+    // Pinned after first run — fails if dispatch rejected or wrong battle outcome.
+    // At quiescence: t2.owner === 'player' (capture), a1 garrisoned with carried HP.
+    expect(r.hash).toBe('c4057e1c');
+    expect(r.ticks).toBeGreaterThan(0);
+  });
+
+  // ── Task 7: dispatch → travel → fight → HOLD (defender wins, repels attacker) ─
+  //
+  // Map: t0(player) -E→ t1(player) -E→ t2(enemy, strong garrison).
+  // Weak attacker: str=1, agi=1. Strong garrison: str=20, agi=20, int=5, lck=5.
+  // The garrison repels the attacker; tile stays enemy-owned, garrison HP attrited.
+  // Hash is pinned after running once; fails on a no-op or wrong outcome.
+  it('runScriptedConquest: defender holds (weak attacker repelled, deterministic hash)', () => {
+    const mapWeakAttackerVsStrongGarrison: MapSetup = {
+      tiles: [
+        { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+        { id: 't1', type: 'cache', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
+        {
+          id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' },
+          garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }],
+        },
+      ],
+      armies: [{
+        id: 'a1',
+        units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+        tile: 't0',
+      }],
+    };
+    const r = runScriptedConquest({
+      version: 3, seed: 1,
+      setup: mapWeakAttackerVsStrongGarrison,
+      script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] }],
+    });
+    // Pinned after first run — fails if dispatch rejected or wrong battle outcome.
+    // At quiescence: t2.owner === 'enemy' (held), garrison persists with carried HP.
+    expect(r.hash).toBe('49fba11a');
+    expect(r.ticks).toBeGreaterThan(0);
   });
 });

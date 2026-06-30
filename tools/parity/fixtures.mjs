@@ -201,8 +201,9 @@ export const FIXTURES = [
     // conquest-capture-seed0: army a1 dispatches from owned t0 across transit t1 to undefended
     // enemy tile t2 (no garrison). After 2 hops army arrives, t2 owner flips to 'player'.
     // Quiescent once garrisoned. Proves version-3 runReplay, capture path, and V8===goja parity.
+    // Re-pinned by Task 7: hashMap now folds in army/garrison rosters + HP (old hash: 503f1a30).
     name: 'conquest-capture-seed0',
-    expectedHash: '503f1a30',
+    expectedHash: '356ce892',
     bundle: {
       version: 3,
       seed: 0,
@@ -217,6 +218,66 @@ export const FIXTURES = [
             { id: 'u1', side: 'A', attrs: { str: 5, agi: 1, int: 1, lck: 1 }, attackKind: 'melee', priority: 5, pos: { x: 0, y: 0 } },
           ], tile: 't0' },
         ],
+      },
+      script: [
+        { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] },
+      ],
+    },
+  },
+  {
+    // conquest-fight-capture-seed1: strong attacker (str=20,agi=20,int=5,lck=5) vs weak garrison
+    // (str=1,agi=1). Attacker defeats garrison; t2 captured; attacker garrisoned with carried HP.
+    // At quiescence, rosters+HP in army part capture the attrition outcome.
+    // Proves hashMap folds in rosters+HP for capture outcomes; V8===goja.
+    name: 'conquest-fight-capture-seed1',
+    expectedHash: 'c4057e1c',
+    bundle: {
+      version: 3,
+      seed: 1,
+      setup: {
+        tiles: [
+          { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+          { id: 't1', type: 'cache', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
+          {
+            id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' },
+            garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+          },
+        ],
+        armies: [{
+          id: 'a1',
+          units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }],
+          tile: 't0',
+        }],
+      },
+      script: [
+        { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] },
+      ],
+    },
+  },
+  {
+    // conquest-fight-hold-seed1: weak attacker (str=1,agi=1) vs strong garrison
+    // (str=20,agi=20,int=5,lck=5). Garrison repels attacker; t2 stays enemy-owned; garrison
+    // persists with carried HP (attrition). At quiescence, rosters+HP in tile part capture hold.
+    // Proves hashMap folds in rosters+HP for hold outcomes; V8===goja.
+    name: 'conquest-fight-hold-seed1',
+    expectedHash: '49fba11a',
+    bundle: {
+      version: 3,
+      seed: 1,
+      setup: {
+        tiles: [
+          { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+          { id: 't1', type: 'cache', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
+          {
+            id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' },
+            garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }],
+          },
+        ],
+        armies: [{
+          id: 'a1',
+          units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+          tile: 't0',
+        }],
       },
       script: [
         { atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }] },
