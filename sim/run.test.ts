@@ -603,13 +603,16 @@ it('a sortie repelled by a strong defender keeps the tile, status stays active, 
     ],
     armies: [{ id: 'd', tile: 't', units: [u('du','A',20)] }],
   }, 1);
-  // Run until the battle resolves (status stays active since d survives and no win/lose condition)
-  for (let i = 0; i < 120 && run.map.battles.some((b) => b.tile === 't'); i++) runTick(run, []);
-  expect(run.map.tiles.find((x) => x.id === 't')!.owner).toBe('player');  // tile held
-  expect(run.status).toBe('active');                                        // run continues
+  // Tick through: applyEnemyAI opens the sortie on tick 1; subsequent ticks step the fight
+  // until it resolves (strong defender str=20 defeats weak attacker str=1). status stays 'active'
+  // since the run never reaches a win/lose condition.
+  for (let i = 0; i < 120 && run.status === 'active'; i++) runTick(run, []);
+  expect(run.map.events.some((e) => e.t === 'sortie')).toBe(true);          // sortie actually opened
+  expect(run.map.tiles.find((x) => x.id === 't')!.owner).toBe('player');   // tile held
+  expect(run.status).toBe('active');                                         // run continues
   const defender = run.map.armies.find((a) => a.id === 'd');
-  expect(defender).toBeDefined();                                            // army survived
-  expect(defender!.state).toBe('garrisoned');                               // settled back
+  expect(defender).toBeDefined();                                             // army survived
+  expect(defender!.state).toBe('garrisoned');                                // settled back
 });
 
 // Boss interplay: terminal-sticky status pre-empts any sortie consequence.
