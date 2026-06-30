@@ -1,6 +1,6 @@
 import { it, expect } from 'vitest';
-import { initRun, hashRun, runTick, type RunState } from './run';
-import type { MapSetup, RunCommand } from '../shared/types';
+import { initRun, hashRun, runTick } from './run';
+import type { MapSetup } from '../shared/types';
 import { runScriptedRun } from './replay';
 import { runReplay } from './replay';
 
@@ -43,7 +43,7 @@ const bossSetup: MapSetup = {
 
 it('runTick advances the map (a dispatched army leaves its tile)', () => {
   const run = initRun(bossSetup, 1);
-  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] as RunCommand[]);
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
   // dispatched this tick → travelling; subsequent ticks move it (no same-tick move per Plan 2)
   expect(run.map.armies[0]!.state === 'travelling' || run.map.armies[0]!.tile !== 't0').toBe(true);
   expect(run.status).toBe('active');
@@ -51,7 +51,7 @@ it('runTick advances the map (a dispatched army leaves its tile)', () => {
 
 it('capturing the (undefended) boss tile wins the run', () => {
   const run = initRun(bossSetup, 1);
-  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] as RunCommand[]);
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
   for (let i = 0; i < 50 && run.status === 'active'; i++) runTick(run, []);
   expect(run.map.tiles.find((t) => t.id === 't1')!.owner).toBe('player');
   expect(run.status).toBe('won');
@@ -59,7 +59,7 @@ it('capturing the (undefended) boss tile wins the run', () => {
 
 it('extract ends the run as extracted, before any movement', () => {
   const run = initRun(bossSetup, 1);
-  runTick(run, [{ t: 'extract' }, { t: 'dispatch', armyId: 'a1', toTile: 't1' }] as RunCommand[]);
+  runTick(run, [{ t: 'extract' }, { t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
   expect(run.status).toBe('extracted');
   expect(run.map.armies[0]!.tile).toBe('t0'); // dispatch was NOT applied
 });
@@ -68,7 +68,7 @@ it('a terminal run is a no-op', () => {
   const run = initRun(bossSetup, 1);
   run.status = 'won';
   const before = run.map.totalTicks;
-  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] as RunCommand[]);
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
   expect(run.map.totalTicks).toBe(before);
 });
 

@@ -13,9 +13,9 @@
 //   personality-tiebreak-seed1       (8d2831ec) — hotheaded lean: actor equidistant from a_tanky (str=10) + z_glass (str=4); picks z_glass (lower HP)
 //   scripted-join-seed5              (7af6bcae) — A reinforcement joins at activation 3; turns B-win into A-win
 //   scripted-retreat-seed7           (63b649df) — b1 ordered to retreat E at activation 2; crosses width-7 grid, takes hits, exits retreated
-//   run-won-seed1                    (PENDING)  — strong attacker dispatched to lightly-garrisoned boss tile → won
-//   run-rest-heal-seed1              (PENDING)  — wounded a1 heals on rest tile while a2 travels to undefended enemy tile
-//   run-extract-seed1                (PENDING)  — extract command at tick 0 → extracted
+//   run-won-seed1                    (561ab142) — strong attacker dispatched to lightly-garrisoned boss tile → won
+//   run-rest-heal-seed1              (930e2fc9) — wounded a1 heals on rest tile while a2 travels to undefended enemy tile
+//   run-extract-seed1                (5b653528) — extract command at tick 0 → extracted
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {
