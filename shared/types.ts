@@ -127,7 +127,8 @@ export type MapEvent =
   | { t: 'battleOpened'; tile: string; attackers: string[] }
   | { t: 'reinforced'; tile: string; armyId: string }
   | { t: 'repelled'; tile: string }
-  | { t: 'reclaimed'; tile: string; by: string };
+  | { t: 'reclaimed'; tile: string; by: string }
+  | { t: 'sortie'; tile: string; from: string };
 export type MapCommand = { t: 'dispatch'; armyId: string; toTile: string; gate?: MapEdge } | { t: 'retreat'; armyId: string };
 export type RunCommand = MapCommand | { t: 'extract' };
 export interface ConquestBundle { version: 3; setup: MapSetup; seed: number; script: { atTick: number; commands: MapCommand[] }[]; }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { initConquest, hashMap, advance, committedCount, MapState, reconcileArmy } from './conquest-map';
+import { initConquest, hashMap, advance, committedCount, openSortie, MapState, reconcileArmy } from './conquest-map';
 import type { MapSetup, UnitSpec, Army } from '../shared/types';
 import type { FightState } from './tile-fight';
 
@@ -835,4 +835,30 @@ it('defender win: attacker army removed, garrison survivors persist (attrited), 
 
   // repelled event must have been emitted
   expect(s.events.some(e => e.t === 'repelled' && (e as any).tile === 't2')).toBe(true);
+});
+
+// ── openSortie: enemy-attacker battle ────────────────────────────────────────
+
+const u = (id: string, side: 'A' | 'B', str: number, agi = 5): UnitSpec => ({
+  id, side, attackKind: 'melee',
+  attrs: { str, agi, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 },
+});
+
+it('openSortie opens an enemy-attacker battle: enemy garrison side A, player army side B, source emptied', () => {
+  const state = initConquest({ tiles: [
+    { id: 's', type: 'enemy', owner: 'enemy', neighbors: { E: 't' }, garrison: [u('g1','B',5), u('g2','B',5)] },
+    { id: 't', type: 'enemy', owner: 'player', neighbors: { W: 's' }, garrison: [] },
+  ], armies: [{ id: 'd', tile: 't', units: [u('du','A',6)] }] }, 1);
+  const s = state.tiles.find(x => x.id === 's')!, t = state.tiles.find(x => x.id === 't')!;
+  openSortie(state, s, t);
+  const b = state.battles.find(x => x.tile === 't')!;
+  expect(b.attackerOwner).toBe('enemy');
+  expect(b.attackerGarrison!.map(g => g.id)).toEqual(['g1','g2']);   // stashed originals
+  expect(s.garrison).toHaveLength(0);                                 // source committed
+  const sideA = b.fight.units.filter(fu => fu.side === 'A').map(fu => fu.id);
+  const sideB = b.fight.units.filter(fu => fu.side === 'B').map(fu => fu.id);
+  expect(sideA).toEqual(['garrison#g1','garrison#g2']);               // enemy garrison = attacker
+  expect(sideB).toEqual(['d#du']);                                    // player army = defender
+  expect(state.armies.find(a => a.id === 'd')!.state).toBe('contested');
+  expect(state.events.some(e => e.t === 'sortie' && (e as any).tile === 't' && (e as any).from === 's')).toBe(true);
 });

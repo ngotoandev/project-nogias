@@ -15,7 +15,7 @@ const cloneSpec = (u: UnitSpec): UnitSpec => ({
 
 // ── MapState (relocated from shared/types.ts; now holds FightStates) ─────────
 
-export interface MapBattle { tile: string; fight: FightState; }
+export interface MapBattle { tile: string; fight: FightState; attackerOwner: 'player' | 'enemy'; attackerGarrison?: UnitSpec[]; }
 
 export interface MapState {
   tiles: MapTile[];
@@ -339,7 +339,7 @@ function resolveArrival(state: MapState, army: Army): void {
       const fight = initFight(setup, seed);
 
       // Insert battle sorted by tile id
-      state.battles.push({ tile: tile.id, fight });
+      state.battles.push({ tile: tile.id, fight, attackerOwner: 'player' });
       state.battles.sort((a, b) => (a.tile < b.tile ? -1 : a.tile > b.tile ? 1 : 0));
 
       const attackers = attackerArmies.map(a => a.id).sort();
@@ -535,10 +535,49 @@ export function advance(state: MapState, commands: MapCommand[]): MapState {
   return state;
 }
 
-// ── hashMap ──────────────────────────────────────────────────────────────────
+// ── openSortie: enemy-initiated battle against a player tile ─────────────────
 
 const byId = (a: { id: string }, b: { id: string }): number =>
   a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+
+function buildSortieSetup(state: MapState, target: MapTile, source: MapTile,
+  defenderArmies: Army[], attackerGarrison: UnitSpec[]): { setup: FightSetup; seed: number } {
+  const grid = DEFAULT_FIGHT_GRID;
+  const units: UnitSpec[] = [];
+  const gate = gateOf(target, source.id);
+  for (let k = 0; k < attackerGarrison.length; k++) {           // attacker: enemy garrison, side A, gate edge
+    const g = attackerGarrison[k]!;
+    units.push({ id: `garrison#${g.id}`, side: 'A', attackKind: g.attackKind, attrs: { ...g.attrs },
+      skill: g.skill, traits: g.traits ? g.traits.slice() : undefined,
+      personality: g.personality ? { ...g.personality } : undefined, priority: g.priority,
+      startHp: g.startHp, pos: deployCell(gate, grid, k) });
+  }
+  let di = 0;                                                    // defender: player army units, side B, interior
+  for (const army of defenderArmies.slice().sort(byId)) {
+    for (const u of army.units) {
+      units.push({ id: `${army.id}#${u.id}`, side: 'B', attackKind: u.attackKind, attrs: { ...u.attrs },
+        skill: u.skill, traits: u.traits ? u.traits.slice() : undefined,
+        personality: u.personality ? { ...u.personality } : undefined, priority: u.priority,
+        startHp: u.startHp, pos: garrisonCell(grid, di++) });
+    }
+  }
+  return { setup: { grid, units }, seed: fightSeed(state.seed, target.id) };
+}
+
+export function openSortie(state: MapState, source: MapTile, target: MapTile): void {
+  const defenderArmies = state.armies.filter((a) => a.tile === target.id);
+  const attackerGarrison = source.garrison.slice();              // stash originals (attackKind lost from fight Unit)
+  const { setup, seed } = buildSortieSetup(state, target, source, defenderArmies, attackerGarrison);
+  const fight = initFight(setup, seed);
+  source.garrison = [];                                          // committed to the sortie
+  state.battles.push({ tile: target.id, fight, attackerOwner: 'enemy', attackerGarrison });
+  state.battles.sort((a, b) => (a.tile < b.tile ? -1 : a.tile > b.tile ? 1 : 0));
+  const gate = gateOf(target, source.id);
+  for (const army of defenderArmies) { army.state = 'contested'; army.target = target.id; army.gate = gate; }
+  state.events.push({ t: 'sortie', tile: target.id, from: source.id });
+}
+
+// ── hashMap ──────────────────────────────────────────────────────────────────
 
 export function hashMap(state: MapState): string {
   const tilePart = [...state.tiles].sort(byId).map((t) =>
