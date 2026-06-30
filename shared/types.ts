@@ -116,7 +116,7 @@ export interface BoonSpec { attr: 'str' | 'agi' | 'int' | 'lck'; amount: number;
 export interface MapTile { id: string; type: TileType; owner: TileOwner; neighbors: { N?: string; S?: string; E?: string; W?: string }; garrison: UnitSpec[]; muster?: UnitSpec[]; boon?: BoonSpec; effectClaimed?: boolean; }
 export type ArmyState = 'garrisoned' | 'travelling' | 'contested' | 'retreating';
 export interface Army { id: string; units: UnitSpec[]; tile: string; state: ArmyState; target?: string; route?: string[]; travelGauge: number; gate?: MapEdge; retreatOrdered?: boolean; /* transient — NOT hashed */ }
-export interface MapSetup { tiles: MapTile[]; armies: { id: string; units: UnitSpec[]; tile: string }[]; }
+export interface MapSetup { tiles: MapTile[]; armies: { id: string; units: UnitSpec[]; tile: string }[]; enemyReclaims?: boolean; }
 export type MapEvent =
   | { t: 'dispatched'; armyId: string; toTile: string }
   | { t: 'hopped'; armyId: string; from: string; to: string }
@@ -126,7 +126,8 @@ export type MapEvent =
   | { t: 'rejected'; armyId: string; reason: string }
   | { t: 'battleOpened'; tile: string; attackers: string[] }
   | { t: 'reinforced'; tile: string; armyId: string }
-  | { t: 'repelled'; tile: string };
+  | { t: 'repelled'; tile: string }
+  | { t: 'reclaimed'; tile: string; by: string };
 export type MapCommand = { t: 'dispatch'; armyId: string; toTile: string; gate?: MapEdge } | { t: 'retreat'; armyId: string };
 export type RunCommand = MapCommand | { t: 'extract' };
 export interface ConquestBundle { version: 3; setup: MapSetup; seed: number; script: { atTick: number; commands: MapCommand[] }[]; }

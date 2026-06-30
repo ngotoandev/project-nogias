@@ -400,3 +400,81 @@ it('a muster tile that STARTS player-owned never fires (you did not capture it)'
   for (let i = 0; i < 5; i++) runTick(run, []);
   expect(run.map.armies.some((a) => a.id.startsWith('muster-'))).toBe(false);
 });
+
+// ── Enemy AI / reclaim tests (Task 2) ────────────────────────────────────────
+
+// t0 (player start, defended by a1) — E — t1 (enemy, garrisoned) — E — t2 (player rest, undefended)
+const reclaimMap = (enemyReclaims: boolean, t1garr = [u('g1','B',4)]): MapSetup => ({
+  enemyReclaims,
+  tiles: [
+    { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+    { id: 't1', type: 'enemy', owner: 'enemy',  neighbors: { W: 't0', E: 't2' }, garrison: t1garr },
+    { id: 't2', type: 'rest',  owner: 'player', neighbors: { W: 't1' }, garrison: [] }, // player-owned but undefended
+  ],
+  armies: [{ id: 'a1', tile: 't0', units: [u('a1u','A',9)] }],
+});
+
+it('a garrisoned enemy tile reclaims an undefended adjacent player tile (and fires a reclaimed event)', () => {
+  const run = initRun(reclaimMap(true), 1);
+  runTick(run, []); // a1 holds t0 (defended); t2 is undefended → t1 reclaims it
+  expect(run.map.tiles.find((t) => t.id === 't2')!.owner).toBe('enemy');
+  expect(run.map.tiles.find((t) => t.id === 't0')!.owner).toBe('player'); // defended, held
+  expect(run.map.events.some((e) => e.t === 'reclaimed' && e.tile === 't2' && e.by === 't1')).toBe(true);
+});
+
+it('enemyReclaims=false ⇒ no reclaim', () => {
+  const run = initRun(reclaimMap(false), 1);
+  runTick(run, []);
+  expect(run.map.tiles.find((t) => t.id === 't2')!.owner).toBe('player');
+});
+
+it('an un-garrisoned enemy tile does not reclaim', () => {
+  const run = initRun(reclaimMap(true, []), 1); // t1 garrison empty
+  runTick(run, []);
+  expect(run.map.tiles.find((t) => t.id === 't2')!.owner).toBe('player');
+});
+
+it('recapture-no-refire: player captures muster tile, leaves it undefended, enemy reclaims it, player re-captures — still exactly ONE muster army', () => {
+  // Topology: t0 (player start) — E — t1 (muster, enemy) — E — t2 (enemy, holding tile, no garrison)
+  //                                                           S
+  //                                                          te (enemy garrisoned)
+  // te neighbors t1 to the N; t1 neighbors te to the S — reciprocal. No boss tile: no win condition.
+  // Player dispatches a1 to capture t1 (muster fires once), then a1+muster-t1 move to t2,
+  // leaving t1 undefended → te reclaims t1 via N.
+  // Player then dispatches a2 to re-take t1 → effectClaimed blocks a second muster spawn.
+  const noRefireSetup: MapSetup = {
+    enemyReclaims: true,
+    tiles: [
+      { id: 't0', type: 'start',  owner: 'player', neighbors: { E: 't1' },           garrison: [] },
+      { id: 't1', type: 'muster', owner: 'enemy',  neighbors: { W: 't0', E: 't2', S: 'te' }, garrison: [],
+        muster: [u('m1','A',4)] },
+      { id: 't2', type: 'enemy',  owner: 'enemy',  neighbors: { W: 't1' },           garrison: [] },
+      { id: 'te', type: 'enemy',  owner: 'enemy',  neighbors: { N: 't1' },           garrison: [u('eg1','B',2)] },
+    ],
+    armies: [
+      { id: 'a1', tile: 't0', units: [u('a1u','A',20)] },
+      { id: 'a2', tile: 't0', units: [u('a2u','A',20)] },
+    ],
+  };
+  const run = initRun(noRefireSetup, 1);
+
+  // Step 1: dispatch a1 to capture t1 (muster)
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
+  for (let i = 0; i < 50 && run.map.tiles.find((t) => t.id === 't1')!.owner !== 'player'; i++) runTick(run, []);
+  expect(run.map.tiles.find((t) => t.id === 't1')!.owner).toBe('player');
+  expect(run.map.armies.filter((a) => a.id === 'muster-t1')).toHaveLength(1); // first spawn
+
+  // Step 2: dispatch both a1 and muster-t1 forward to t2, leaving t1 undefended;
+  // once both armies have left t1, enemy AI (te) will reclaim t1 via N.
+  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }, { t: 'dispatch', armyId: 'muster-t1', toTile: 't2' }]);
+  for (let i = 0; i < 100 && run.map.tiles.find((t) => t.id === 't1')!.owner !== 'enemy'; i++) runTick(run, []);
+  expect(run.map.tiles.find((t) => t.id === 't1')!.owner).toBe('enemy'); // enemy AI reclaimed it
+
+  // Step 3: dispatch a2 to re-capture t1
+  runTick(run, [{ t: 'dispatch', armyId: 'a2', toTile: 't1' }]);
+  for (let i = 0; i < 50 && run.map.tiles.find((t) => t.id === 't1')!.owner !== 'player'; i++) runTick(run, []);
+  expect(run.map.tiles.find((t) => t.id === 't1')!.owner).toBe('player');
+
+  // effectClaimed prevents a second muster spawn — still exactly ONE muster-t1 army
+  expect(run.map.armies.filter((a) => a.id === 'muster-t1')).toHaveLength(1);
+});

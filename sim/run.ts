@@ -5,12 +5,12 @@ import { fnv1a } from './hash';
 import { deriveStats } from './stats';
 import { REST_HEAL_PER_TICK } from '../shared/config';
 
-export interface RunState { map: MapState; status: 'active' | 'won' | 'lost' | 'extracted'; }
+export interface RunState { map: MapState; status: 'active' | 'won' | 'lost' | 'extracted'; enemyReclaims: boolean; }
 
 export function initRun(setup: MapSetup, seed = 0): RunState {
   const map = initConquest(setup, seed);
   for (const t of map.tiles) if (t.owner === 'player') t.effectClaimed = true; // started-owned ⇒ not captured ⇒ never fires
-  return { map, status: 'active' };
+  return { map, status: 'active', enemyReclaims: !!setup.enemyReclaims };
 }
 
 export function hashRun(run: RunState): string {
@@ -67,6 +67,22 @@ function applyRestHealing(map: MapState): void {
   }
 }
 
+function applyEnemyAI(map: MapState): void {
+  const defended = new Set(map.armies.map((a) => a.tile)); // a player army on a tile holds it
+  for (const tile of map.tiles) {                          // id-ordered by construction
+    if (tile.owner !== 'enemy' || tile.garrison.length === 0) continue;
+    for (const e of ['N', 'S', 'E', 'W'] as const) {
+      const nb = tile.neighbors[e]; if (!nb) continue;
+      const nt = map.tiles.find((t) => t.id === nb);
+      if (nt && nt.owner === 'player' && !defended.has(nb)) {
+        nt.owner = 'enemy';
+        map.events.push({ t: 'reclaimed', tile: nb, by: tile.id });
+        break; // one reclaim per enemy tile per tick
+      }
+    }
+  }
+}
+
 export function runTick(run: RunState, commands: RunCommand[]): RunState {
   if (run.status !== 'active') return run;                          // terminal status is sticky
   if (commands.some((c) => c.t === 'extract')) { run.status = 'extracted'; return run; }
@@ -74,6 +90,7 @@ export function runTick(run: RunState, commands: RunCommand[]): RunState {
   advance(run.map, mapCommands);
   applyRestHealing(run.map);
   applyCaptureEffects(run.map);          // was applyCaptureEffects(run.map, ownedBefore)
+  if (run.enemyReclaims) applyEnemyAI(run.map);
   if (isWon(run.map)) run.status = 'won';
   else if (isLost(run.map)) run.status = 'lost';
   return run;
