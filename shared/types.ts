@@ -38,6 +38,7 @@ export interface UnitSpec {
   priority: number;    // higher = more forward + more aggro
   pos: Cell;
   personality?: { temperament: Temperament };
+  startHp?: number;    // opt-in entry HP; clamped to [1, maxHp]; absent ⇒ maxHp
 }
 
 export interface Unit {

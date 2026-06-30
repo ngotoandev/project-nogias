@@ -23,12 +23,11 @@ export interface FightState {
 
 function specToUnit(u: UnitSpec): Unit {
   const derived = deriveStats(u.attrs, u.attackKind);
-  return {
-    id: u.id, side: u.side, attrs: { ...u.attrs }, priority: u.priority,
-    pos: { x: u.pos.x, y: u.pos.y }, hp: derived.maxHp, derived, gauge: 0, mana: 0, skill: u.skill,
+  const hp = u.startHp === undefined ? derived.maxHp : Math.max(1, Math.min(derived.maxHp, u.startHp));
+  return { id: u.id, side: u.side, attrs: { ...u.attrs }, priority: u.priority,
+    pos: { x: u.pos.x, y: u.pos.y }, hp, derived, gauge: 0, mana: 0, skill: u.skill,
     traits: u.traits ?? [], kills: 0, stallSinceTick: -1, fleeingSinceTick: -1,
-    temperament: u.personality?.temperament,
-  };
+    temperament: u.personality?.temperament };
 }
 
 export function initFight(setup: FightSetup, seed: number): FightState {

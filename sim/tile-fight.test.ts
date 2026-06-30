@@ -701,6 +701,39 @@ describe('orderRetreat', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Task 1: UnitSpec.startHp — opt-in per-unit entry HP
+// ---------------------------------------------------------------------------
+
+describe('UnitSpec.startHp', () => {
+  it('a unit enters at startHp (clamped to [1,maxHp]); absent ⇒ full', () => {
+    const setup = { grid: { width: 3, height: 1, blocked: [] }, units: [
+      { id: 'a', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 }, startHp: 7 },
+      { id: 'b', side: 'B', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 2, y: 0 } },
+    ] } as const;
+    const s = initFight(setup as any, 1);
+    expect(s.units.find(u => u.id === 'a')!.hp).toBe(7);                 // startHp honored
+    expect(s.units.find(u => u.id === 'b')!.hp).toBe(s.units.find(u => u.id === 'b')!.derived.maxHp); // absent ⇒ full
+  });
+
+  it('startHp is clamped to [1, maxHp]', () => {
+    // str=5 → maxHp = 20 + 5*5 = 45
+    const makeSetup = (startHpA: number, startHpB: number) => ({
+      grid: { width: 3, height: 1, blocked: [] },
+      units: [
+        { id: 'a', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 }, startHp: startHpA },
+        { id: 'b', side: 'B' as const, attackKind: 'melee' as const, attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 2, y: 0 }, startHp: startHpB },
+      ],
+    });
+    const sOver = initFight(makeSetup(9999, 1), 1);
+    const sUnder = initFight(makeSetup(1, 0), 1);
+    // startHp: 9999 → clamped to maxHp (45)
+    expect(sOver.units.find(u => u.id === 'a')!.hp).toBe(sOver.units.find(u => u.id === 'a')!.derived.maxHp);
+    // startHp: 0 → clamped to 1
+    expect(sUnder.units.find(u => u.id === 'b')!.hp).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Task 2: joinFight — deploy units mid-fight, act at next turn boundary
 // ---------------------------------------------------------------------------
 
