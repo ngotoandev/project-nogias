@@ -129,3 +129,4 @@ export type MapEvent =
 export type MapCommand = { t: 'dispatch'; armyId: string; toTile: string; gate?: MapEdge } | { t: 'retreat'; armyId: string };
 export type RunCommand = MapCommand | { t: 'extract' };
 export interface ConquestBundle { version: 3; setup: MapSetup; seed: number; script: { atTick: number; commands: MapCommand[] }[]; }
+export interface RunBundle { version: 4; setup: MapSetup; seed: number; script: { atTick: number; commands: RunCommand[] }[]; }

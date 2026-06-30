@@ -129,3 +129,28 @@ it('no healing off a rest tile / on an enemy-owned rest tile / when not garrison
   runTick(runNotGarrisoned, []);
   expect(runNotGarrisoned.map.armies[0]!.units[0]!.startHp).toBe(3); // unchanged — state !== 'garrisoned'
 });
+
+// ── runScriptedRun / runReplay v4 tests (Task 4) ─────────────────────────────
+
+import { runScriptedRun } from './replay';
+import { runReplay } from './replay';
+
+it('runScriptedRun drives a dispatch to a boss capture ⇒ won', () => {
+  const r = runScriptedRun({ version: 4, seed: 1, setup: bossSetup,
+    script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] }] });
+  expect(r.status).toBe('won');
+  expect(typeof r.hash).toBe('string');
+});
+
+it('runScriptedRun: an extract command ⇒ extracted', () => {
+  const r = runScriptedRun({ version: 4, seed: 1, setup: bossSetup,
+    script: [{ atTick: 0, commands: [{ t: 'extract' }] }] });
+  expect(r.status).toBe('extracted');
+});
+
+it('runReplay routes v4 to runScriptedRun', () => {
+  const r = runReplay({ version: 4, seed: 1, setup: bossSetup,
+    script: [{ atTick: 0, commands: [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }] }] });
+  expect(typeof r.hash).toBe('string');
+  expect(r.ticks).toBeGreaterThan(0);
+});
