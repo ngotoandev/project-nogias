@@ -1,4 +1,4 @@
-import type { MapSetup, MapCommand, MapEdge, MapTile, Army, UnitSpec, FightSetup, GridSpec } from '../shared/types';
+import type { MapSetup, MapCommand, MapEdge, MapTile, Army, UnitSpec, FightSetup, GridSpec, MapEvent } from '../shared/types';
 import type { FightState } from './tile-fight';
 import { initFight } from './tile-fight';
 import { fnv1a } from './hash';
@@ -21,7 +21,7 @@ export interface MapState {
   tiles: MapTile[];
   armies: Army[];
   totalTicks: number;
-  events: import('../shared/types').MapEvent[];
+  events: MapEvent[];
   seed: number;
   battles: MapBattle[];
 }
@@ -137,8 +137,11 @@ function fightSeed(seed: number, tileId: string): number {
 
 // Returns the deploy cell for the k-th unit (0-based) on a gate edge of the grid.
 // k+1 skips the corner so different gates never collide at (0,0) etc.
+// Valid positions are i in [1, limit-1]; throws if the gate is over-capacity.
 function deployCell(edge: MapEdge, grid: GridSpec, k: number): { x: number; y: number } {
   const i = k + 1;
+  const limit = (edge === 'N' || edge === 'S') ? grid.width : grid.height;
+  if (i >= limit) throw new Error(`deployCell: gate ${edge} overflow (index ${i} >= ${limit}); too many units on one gate`);
   if (edge === 'W') return { x: 0, y: i };
   if (edge === 'E') return { x: grid.width - 1, y: i };
   if (edge === 'N') return { x: i, y: 0 };
@@ -146,8 +149,11 @@ function deployCell(edge: MapEdge, grid: GridSpec, k: number): { x: number; y: n
 }
 
 // Returns the garrison cell for the k-th garrison unit (0-based), interior center column.
+// Throws if the column is over-capacity (y would exceed grid height).
 function garrisonCell(grid: GridSpec, k: number): { x: number; y: number } {
-  return { x: (grid.width / 2) | 0, y: k + 1 };
+  const y = k + 1;
+  if (y >= grid.height) throw new Error(`garrisonCell: overflow (index ${y} >= ${grid.height}); too many garrison units`);
+  return { x: (grid.width / 2) | 0, y };
 }
 
 // Build the FightSetup for a battle at a defended tile.
