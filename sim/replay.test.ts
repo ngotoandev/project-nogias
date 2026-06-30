@@ -305,7 +305,10 @@ describe('runScriptedConquest', () => {
     // The contested seam now opens a battle (battleOpened event), not an inert contested event.
     // Re-pinned by Task 3: runScriptedConquest quiescence now waits for all battles to resolve,
     // so totalTicks increases (battles are stepped until outcome), changing the hash.
-    expect(r.hash).toBe('f8abc431');
+    // Re-pinned by Task 4: battle outcome is now applied — army stops being contested (it becomes
+    // garrisoned after capture), tile owner flips to 'player'. Both change the hashMap inputs,
+    // producing a new hash. This is a UNIT TEST hash, not a parity fixture.
+    expect(r.hash).toBe('523f1d56');
     expect(r.ticks).toBeGreaterThan(0);
   });
 

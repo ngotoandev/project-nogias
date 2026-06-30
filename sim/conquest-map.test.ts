@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { initConquest, hashMap, advance, committedCount, MapState } from './conquest-map';
-import type { MapSetup } from '../shared/types';
+import { initConquest, hashMap, advance, committedCount, MapState, reconcileArmy } from './conquest-map';
+import type { MapSetup, UnitSpec, Army } from '../shared/types';
+import type { FightState } from './tile-fight';
 
 // 3 tiles in a row: t0(player) — t1(neutral, empty) — t2(enemy, garrison). Helper builds it.
 function setup(): MapSetup {
@@ -467,28 +468,175 @@ it('advance steps active battles by STEPS_PER_MAP_TICK; a one-sided battle reach
   // Dispatch attacker: route ['t1','t2']. Army agi=20 → tempo = 10+20=30; TRAVEL_THRESHOLD=100 → hop every ceil(100/30)≈4 ticks.
   advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]);
 
-  // Advance until battle opens (army arrives at t2 — the defended tile)
+  // Advance until battle opens AND resolves (Task 4: resolved battles are removed in the same tick
+  // they resolve). For a strong-vs-weak fight, the battle may open and resolve in one advance call.
+  // We drive until the army is garrisoned on t2 (outcome applied) or safety cap.
   const SAFETY = 60;
   let ticks = 0;
-  while (ticks < SAFETY && s.battles.length === 0) {
-    advance(s, []);
-    ticks++;
-  }
-  expect(s.battles.length).toBe(1);
-  expect(s.battles[0]!.tile).toBe('t2');
-
-  // Now advance until the battle resolves (outcome set) or safety cap
-  while (ticks < SAFETY && !s.battles[0]!.fight.outcome) {
+  const a = () => s.armies.find(x => x.id === 'a1')!;
+  while (ticks < SAFETY && a().state !== 'garrisoned') {
     advance(s, []);
     ticks++;
   }
 
-  const battle = s.battles[0]!;
-  // Battle must have been stepped (progress evidence)
-  expect(battle.fight.totalTicks).toBeGreaterThan(0);
-  // Battle must have resolved — strong A beats weak garrison
-  expect(battle.fight.outcome).not.toBeNull();
-  expect(battle.fight.outcome!.winner).toBe('A');
-  // Owner NOT asserted (Task 4); battle remains in state.battles
-  expect(s.battles.length).toBe(1);
+  // After outcome application, battle is removed and tile captured (Task 4)
+  expect(s.battles.length).toBe(0);
+  expect(s.tiles.find(t => t.id === 't2')!.owner).toBe('player');
+  // captured event emitted (winner was 'A')
+  expect(s.events.some(e => e.t === 'captured' && (e as any).tile === 't2')).toBe(true);
+  // Army garrisoned on t2 with no target
+  expect(a().state).toBe('garrisoned');
+  expect(a().tile).toBe('t2');
+});
+
+// ── Task 4: Battle outcome — capture/hold + HP-carrying attrition ────────────
+
+// Weak garrison: single unit with str/agi=1 (very low HP, low damage).
+// Strong attacker: str/agi=20 int=5 lck=5 — decisively wins.
+// The strong attacker should survive with some HP to carry.
+function setupStrongAttackerWeakGarrisonForOutcome(): MapSetup {
+  return {
+    tiles: [
+      { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+      { id: 't1', type: 'cache', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
+      {
+        id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' },
+        garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+      },
+    ],
+    armies: [{
+      id: 'a1',
+      units: [{ id: 'a1u', side: 'A', attackKind: 'melee', attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }],
+      tile: 't0',
+    }],
+  };
+}
+
+// Weak attacker: single unit with str/agi=1 vs strong garrison str/agi=20.
+// The garrison should decisively win, repelling the attacker.
+function setupWeakAttackerStrongGarrison(): MapSetup {
+  return {
+    tiles: [
+      { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+      { id: 't1', type: 'cache', owner: 'player', neighbors: { W: 't0', E: 't2' }, garrison: [] },
+      {
+        id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't1' },
+        garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }],
+      },
+    ],
+    armies: [{
+      id: 'a1',
+      units: [{ id: 'a1u', side: 'A', attackKind: 'melee', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }],
+      tile: 't0',
+    }],
+  };
+}
+
+// Helper: advance state until no travelling armies, no battles, or SAFETY cap.
+function advanceUntilQuiescent(s: MapState, safety = 500): void {
+  for (let i = 0; i < safety; i++) {
+    const busy = s.armies.some(a => a.state === 'travelling' || a.state === 'contested')
+      || s.battles.length > 0;
+    if (!busy) break;
+    advance(s, []);
+  }
+}
+
+it('attacker win: tile captured, surviving attacker army garrisons with carried HP, dead units dropped, slot freed', () => {
+  const s = initConquest(setupStrongAttackerWeakGarrisonForOutcome());
+  advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]);
+  advanceUntilQuiescent(s);
+
+  // Tile must have been captured by the attacker
+  const tile = s.tiles.find(t => t.id === 't2')!;
+  expect(tile.owner).toBe('player');
+
+  // Garrison must be cleared (attacker's army replaced it)
+  expect(tile.garrison).toEqual([]);
+
+  // Army a1 must be garrisoned on t2 with no target
+  const a1 = s.armies.find(a => a.id === 'a1')!;
+  expect(a1.state).toBe('garrisoned');
+  expect(a1.tile).toBe('t2');
+  expect(a1.target).toBeUndefined();
+
+  // Slot freed: no contested/travelling armies targeting t2
+  expect(committedCount(s, 't2')).toBe(0);
+
+  // captured event must have been emitted
+  expect(s.events.some(e => e.t === 'captured' && (e as any).tile === 't2')).toBe(true);
+
+  // Battle must be removed from state.battles
+  expect(s.battles.some(b => b.tile === 't2')).toBe(false);
+
+  // Surviving units carry their HP (startHp set on UnitSpec)
+  for (const u of a1.units) {
+    expect(u.startHp).toBeDefined();
+    expect(u.startHp).toBeGreaterThan(0);
+  }
+});
+
+it('reconcileArmy: keeps survivors with carried HP, drops dead units', () => {
+  // Army has two units; fight unit u2 is dead (hp<=0), u1 survives
+  const units: UnitSpec[] = [
+    { id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
+    { id: 'u2', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } },
+  ];
+  const army: Army = {
+    id: 'myArmy',
+    units,
+    tile: 't0',
+    state: 'contested',
+    travelGauge: 0,
+  };
+
+  // Minimal FightState stub: only the `units` field is used by reconcileArmy
+  const fight = {
+    units: [
+      { id: 'myArmy#u1', side: 'A' as const, hp: 37, attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 }, derived: {} as any, gauge: 0, mana: 0, traits: [], kills: 0, stallSinceTick: -1, fleeingSinceTick: -1 },
+      { id: 'myArmy#u2', side: 'A' as const, hp: 0,  attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 }, derived: {} as any, gauge: 0, mana: 0, traits: [], kills: 0, stallSinceTick: -1, fleeingSinceTick: -1 },
+    ],
+    grid: {} as any,
+    rng: {} as any,
+    events: [],
+    totalTicks: 10,
+    outcome: { winner: 'A' as const, endReason: 'decisive' as const },
+  } satisfies FightState;
+
+  reconcileArmy(army, fight);
+
+  // Only u1 should remain, with startHp = 37 (its fight HP)
+  expect(army.units.length).toBe(1);
+  expect(army.units[0]!.id).toBe('u1');
+  expect(army.units[0]!.startHp).toBe(37);
+
+  // u2 (dead) should have been dropped
+  expect(army.units.find(u => u.id === 'u2')).toBeUndefined();
+});
+
+it('defender win: attacker army removed, garrison survivors persist (attrited), tile stays enemy', () => {
+  const s = initConquest(setupWeakAttackerStrongGarrison());
+  advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]);
+  advanceUntilQuiescent(s);
+
+  // Tile must still be enemy-owned
+  const tile = s.tiles.find(t => t.id === 't2')!;
+  expect(tile.owner).toBe('enemy');
+
+  // Attacker army a1 must be removed from state.armies
+  const a1 = s.armies.find(a => a.id === 'a1');
+  expect(a1).toBeUndefined();
+
+  // Battle must be removed
+  expect(s.battles.some(b => b.tile === 't2')).toBe(false);
+
+  // Garrison survivors must have carried startHp (attrited)
+  expect(tile.garrison.length).toBeGreaterThan(0);
+  for (const g of tile.garrison) {
+    expect(g.startHp).toBeDefined();
+    expect(g.startHp).toBeGreaterThan(0);
+  }
+
+  // repelled event must have been emitted
+  expect(s.events.some(e => e.t === 'repelled' && (e as any).tile === 't2')).toBe(true);
 });
