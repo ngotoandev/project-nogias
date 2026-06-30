@@ -428,19 +428,48 @@ it('run-reclaim-seed1 pin: enemy AI reclaims vacated t0 + undefended t2 while a1
   expect(run.map.tiles.find((t) => t.id === 't2')!.owner).toBe('enemy');
 });
 
-it('run-hold-seed1 pin: enemy AI reclaims vacated t0 but NOT t2 (held by a2) (hash 00cc43c7)', () => {
+it('run-hold-seed1 pin: t1 sorties the a2-defended t2; a2 repels g1 (defender wins); a1 captures vacated t1 (hash 9dc7f64d)', () => {
   const r = runScriptedRun(holdBundle);
-  expect(r.hash).toBe('00cc43c7');
-  // postcondition: t2 was defended by a2 — enemy AI could NOT reclaim it; verify via direct run
+  expect(r.hash).toBe('9dc7f64d');
+  // postcondition: t1 sorties t2 (g1 str=4 vs a2 str=4 — even fight, defender a2 wins);
+  //   t2 stays player-owned; a1 captures the now-undefended t1 (garrison committed to sortie).
   const run = initRun(holdBundle.setup, holdBundle.seed);
   runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
   for (let i = 0; i < 200 && run.status === 'active'; i++) runTick(run, []);
-  expect(run.map.tiles.find((t) => t.id === 't2')!.owner).toBe('player');
+  expect(run.map.tiles.find((t) => t.id === 't2')!.owner).toBe('player');            // a2 repelled the sortie
+  expect(run.map.events.some((e) => e.t === 'sortie')).toBe(true);                   // sortie fired
+  expect(run.map.armies.find((a) => a.id === 'a1')!.tile).toBe('t1');               // a1 captured t1
+  expect(run.map.armies.find((a) => a.id === 'a2')!.state).toBe('garrisoned');      // a2 survived
+});
+
+// ── Enemy AI / sortie tests (Task 3 — lethal sortie wiring) ──────────────────
+
+const u = (id: string, side: 'A'|'B', str: number) => ({ id, side, attackKind: 'melee' as const, attrs: { str, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } });
+
+// s (enemy, garrisoned g1) — E — t (player, defended by army d)
+const sortieTilesAndArmies = {
+  tiles: [
+    { id: 's', type: 'enemy' as const, owner: 'enemy' as const, neighbors: { E: 't' }, garrison: [u('g1','B',6)] },
+    { id: 't', type: 'enemy' as const, owner: 'player' as const, neighbors: { W: 's' }, garrison: [] },
+  ],
+  armies: [{ id: 'd', tile: 't', units: [u('du','A',6)] }],
+};
+
+it('a garrisoned enemy tile sorties an adjacent DEFENDED player tile (battle opens, defender contested)', () => {
+  const run = initRun({ enemyReclaims: true, ...sortieTilesAndArmies }, 1);
+  runTick(run, []);
+  expect(run.map.battles.some((b) => b.tile === 't' && b.attackerOwner === 'enemy')).toBe(true);
+  expect(run.map.events.some((e) => e.t === 'sortie')).toBe(true);
+});
+
+it('enemyReclaims=false ⇒ no sortie', () => {
+  const run = initRun({ enemyReclaims: false, ...sortieTilesAndArmies } as any, 1);
+  runTick(run, []);
+  expect(run.map.battles).toHaveLength(0);
 });
 
 // ── effectClaimed tests (Task 1) ──────────────────────────────────────────────
 
-const u = (id: string, side: 'A'|'B', str: number) => ({ id, side, attackKind: 'melee' as const, attrs: { str, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } });
 // player start t0 — undefended enemy muster tile t1
 const musterMap: MapSetup = {
   tiles: [
@@ -504,22 +533,18 @@ it('an un-garrisoned enemy tile does not reclaim', () => {
   expect(run.map.tiles.find((t) => t.id === 't2')!.owner).toBe('player');
 });
 
-it('recapture-no-refire: player captures muster tile, leaves it undefended, enemy reclaims it, player re-captures — still exactly ONE muster army', () => {
-  // Topology: t0 (player start) — E — t1 (muster, enemy) — E — t2 (enemy, holding tile, no garrison)
-  //                                                           S
-  //                                                          te (enemy garrisoned)
-  // te neighbors t1 to the N; t1 neighbors te to the S — reciprocal. No boss tile: no win condition.
-  // Player dispatches a1 to capture t1 (muster fires once), then a1+muster-t1 move to t2,
-  // leaving t1 undefended → te reclaims t1 via N.
-  // Player then dispatches a2 to re-take t1 → effectClaimed blocks a second muster spawn.
+it('recapture-no-refire: player captures muster tile, tile flips to enemy, player re-captures — still exactly ONE muster army', () => {
+  // Topology: t0 (player start) — E — t1 (muster, enemy) — E — t2 (enemy, no garrison, no boss).
+  // Player dispatches a1 to capture t1 (muster fires once). We then manually flip t1 back to
+  // enemy (simulating any reclaim; no AI needed) and dispatch a2 to re-capture — effectClaimed
+  // blocks a second muster spawn regardless of how ownership was lost.
   const noRefireSetup: MapSetup = {
-    enemyReclaims: true,
+    enemyReclaims: false, // keep AI off so no sortie interferes with the test flow
     tiles: [
-      { id: 't0', type: 'start',  owner: 'player', neighbors: { E: 't1' },           garrison: [] },
-      { id: 't1', type: 'muster', owner: 'enemy',  neighbors: { W: 't0', E: 't2', S: 'te' }, garrison: [],
+      { id: 't0', type: 'start',  owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+      { id: 't1', type: 'muster', owner: 'enemy',  neighbors: { W: 't0', E: 't2' }, garrison: [],
         muster: [u('m1','A',4)] },
-      { id: 't2', type: 'enemy',  owner: 'enemy',  neighbors: { W: 't1' },           garrison: [] },
-      { id: 'te', type: 'enemy',  owner: 'enemy',  neighbors: { N: 't1' },           garrison: [u('eg1','B',2)] },
+      { id: 't2', type: 'enemy',  owner: 'enemy',  neighbors: { W: 't1' }, garrison: [] },
     ],
     armies: [
       { id: 'a1', tile: 't0', units: [u('a1u','A',20)] },
@@ -534,13 +559,11 @@ it('recapture-no-refire: player captures muster tile, leaves it undefended, enem
   expect(run.map.tiles.find((t) => t.id === 't1')!.owner).toBe('player');
   expect(run.map.armies.filter((a) => a.id === 'muster-t1')).toHaveLength(1); // first spawn
 
-  // Step 2: dispatch both a1 and muster-t1 forward to t2, leaving t1 undefended;
-  // once both armies have left t1, enemy AI (te) will reclaim t1 via N.
-  runTick(run, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }, { t: 'dispatch', armyId: 'muster-t1', toTile: 't2' }]);
-  for (let i = 0; i < 100 && run.map.tiles.find((t) => t.id === 't1')!.owner !== 'enemy'; i++) runTick(run, []);
-  expect(run.map.tiles.find((t) => t.id === 't1')!.owner).toBe('enemy'); // enemy AI reclaimed it
+  // Step 2: manually flip t1 back to enemy (simulates any reclaim/sortie-loss scenario)
+  const t1 = run.map.tiles.find((t) => t.id === 't1')!;
+  t1.owner = 'enemy';
 
-  // Step 3: dispatch a2 to re-capture t1
+  // Step 3: dispatch a2 to re-capture t1 (fight-free: garrison was wiped on first capture)
   runTick(run, [{ t: 'dispatch', armyId: 'a2', toTile: 't1' }]);
   for (let i = 0; i < 50 && run.map.tiles.find((t) => t.id === 't1')!.owner !== 'player'; i++) runTick(run, []);
   expect(run.map.tiles.find((t) => t.id === 't1')!.owner).toBe('player');

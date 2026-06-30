@@ -1,6 +1,6 @@
 import type { MapSetup, MapCommand, RunCommand, UnitSpec } from '../shared/types';
 import type { MapState } from './conquest-map';
-import { initConquest, advance, hashMap } from './conquest-map';
+import { initConquest, advance, hashMap, openSortie } from './conquest-map';
 import { fnv1a } from './hash';
 import { deriveStats } from './stats';
 import { REST_HEAL_PER_TICK } from '../shared/config';
@@ -68,17 +68,26 @@ function applyRestHealing(map: MapState): void {
 }
 
 function applyEnemyAI(map: MapState): void {
-  const defended = new Set(map.armies.map((a) => a.tile)); // a player army on a tile holds it
-  for (const tile of map.tiles) {                          // id-ordered by construction
+  const defended = new Set(map.armies.map((a) => a.tile));           // ALL armies block reclaim
+  const stationary = new Set(                                        // only garrisoned/contested trigger sortie
+    map.armies.filter((a) => a.state === 'garrisoned' || a.state === 'contested').map((a) => a.tile),
+  );
+  for (const tile of map.tiles) {
     if (tile.owner !== 'enemy' || tile.garrison.length === 0) continue;
     for (const e of ['N', 'S', 'E', 'W'] as const) {
       const nb = tile.neighbors[e]; if (!nb) continue;
       const nt = map.tiles.find((t) => t.id === nb);
-      if (nt && nt.owner === 'player' && !defended.has(nb)) {
+      if (!nt || nt.owner !== 'player') continue;
+      if (!defended.has(nb)) {                                        // undefended → reclaim (slice 1)
         nt.owner = 'enemy';
         map.events.push({ t: 'reclaimed', tile: nb, by: tile.id });
-        break; // one reclaim per enemy tile per tick
+        break;
       }
+      if (stationary.has(nb) && !map.battles.some((b) => b.tile === nb)) { // stationary defender → sortie
+        openSortie(map, tile, nt);
+        break;
+      }
+      // travelling-defended OR battle already present → not actionable; try next neighbor
     }
   }
 }

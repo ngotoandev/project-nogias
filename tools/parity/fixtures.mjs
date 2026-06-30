@@ -19,7 +19,7 @@
 //   run-muster-seed1                 (205ee9dc) — player captures undefended enemy muster tile; spawns muster-t1 reserve army; quiesces active
 //   run-boon-seed1                   (2064aa00) — player captures undefended enemy boon tile; str+3 → derived HP rises; quiesces active
 //   run-reclaim-seed1                (b06ecc1e) — enemy AI reclaims vacated t0 + undefended t2 while a1 assaults t1
-//   run-hold-seed1                   (00cc43c7) — enemy AI reclaims vacated t0 but NOT t2 (held by a2)
+//   run-hold-seed1                   (9dc7f64d) — t1 sorties a2-defended t2; a2 repels (defender wins); a1 captures vacated t1
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {
@@ -464,10 +464,12 @@ export const FIXTURES = [
   },
   {
     // run-hold-seed1: same map as run-reclaim-seed1 but a2 garrisons t2 (defended). Script dispatches
-    // a1 → t1 at tick 0. Enemy AI reclaims the vacated t0 but NOT t2 (held by a2). Run quiesces;
-    // hash reflects t2 surviving as player-owned while t0 is reclaimed.
+    // a1 → t1 at tick 0. t1's g1(str=4) SORTIES the a2-defended t2 (str=4 — even fight; a2 is
+    // stationary/garrisoned while a1 is travelling). a2 defends successfully (defender side B wins).
+    // g1 was committed to the sortie, leaving t1 ungarrisoned; a1 captures t1 fight-free on arrival.
+    // Run quiesces: t2 player-owned (a2 held), t1 player-owned (a1 captured), a2 garrisoned with 40hp.
     name: 'run-hold-seed1',
-    expectedHash: '00cc43c7',
+    expectedHash: '9dc7f64d',
     bundle: {
       version: 4,
       seed: 1,
