@@ -614,6 +614,90 @@ it('reconcileArmy: keeps survivors with carried HP, drops dead units', () => {
   expect(army.units.find(u => u.id === 'u2')).toBeUndefined();
 });
 
+// ── Task 5: Continuous reinforcement (joinFight) ─────────────────────────────
+
+// Layout:
+//   t0(player) -E→ t2(enemy, sturdy garrison)
+//   t1(player) -N→ t2(enemy)
+// a1 starts at t0 (gate W), a2 starts at t1 (gate S).
+// Garrison is balanced vs a1 alone (won't resolve quickly), so the battle is still
+// active when a2 arrives at t2 a few ticks later.
+function setupReinforcement(): MapSetup {
+  // Moderate attacker + garrison so the fight lasts many ticks
+  const mk = (id: string, side: 'A' | 'B') => ({
+    id, side: side as any, attackKind: 'melee' as const,
+    attrs: { str: 5, agi: 10, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 },
+  });
+  return {
+    tiles: [
+      { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't2' }, garrison: [] },
+      { id: 't1', type: 'cache', owner: 'player', neighbors: { N: 't2' }, garrison: [] },
+      {
+        id: 't2', type: 'enemy', owner: 'enemy', neighbors: { W: 't0', S: 't1' },
+        // Sturdy garrison: balanced fight — won't resolve in a handful of ticks
+        garrison: [mk('g1', 'B'), mk('g2', 'B'), mk('g3', 'B')],
+      },
+    ],
+    armies: [
+      { id: 'a1', units: [mk('a1u', 'A')], tile: 't0' },
+      { id: 'a2', units: [mk('a2u', 'A')], tile: 't1' },
+    ],
+  };
+}
+
+it('an army arriving at an already-battling tile joinFights its units (side A, carried HP, its gate), reinforced event', () => {
+  // a1 is adjacent (1 hop) → arrives quickly at t2 → opens battle.
+  // a2 is adjacent (1 hop) → dispatched a tick later (different gate S).
+  // We dispatch a1 first, then a2 one tick later so a1 opens the battle first.
+  // Both have agi=10 → tempo = TEMPO_BASE(10)+10 = 20 → hop every 5 ticks.
+  const s = initConquest(setupReinforcement());
+
+  // Tick 0: dispatch a1 only (so a1 gets a head start)
+  advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]);
+  // Tick 1: dispatch a2
+  advance(s, [{ t: 'dispatch', armyId: 'a2', toTile: 't2' }]);
+
+  const a1 = () => s.armies.find(x => x.id === 'a1')!;
+  const a2 = () => s.armies.find(x => x.id === 'a2')!;
+
+  // Advance until a1 arrives at t2 (it needs 4 more ticks after tick 0 dispatch, hop on tick 5).
+  // After tick 0 dispatch, travellingBefore on tick 1 includes a1.
+  // Tick 1: a1 gauge += 20 (total 20), also dispatches a2.
+  // Tick 2: a1 gauge 40, a2 gauge 20.
+  // Tick 3: a1 gauge 60, a2 gauge 40.
+  // Tick 4: a1 gauge 80, a2 gauge 60.
+  // Tick 5: a1 gauge 100 → hop to t2 (arrives, opens battle), a2 gauge 80.
+  // Tick 6: a2 gauge 100 → hop to t2 (arrives, joins fight).
+  // We've already done ticks 0 and 1. Advance ticks 2..5 (4 more).
+  for (let i = 0; i < 4; i++) advance(s, []);
+  // a1 should now be contested at t2 with an active battle
+  expect(a1().state).toBe('contested');
+  expect(a1().tile).toBe('t2');
+  const battle = (s as MapState).battles.find(b => b.tile === 't2');
+  expect(battle).toBeDefined();
+  // battle has a1's units but not a2's yet
+  expect(battle!.fight.units.find(u => u.id === 'a1#a1u')).toBeDefined();
+  expect(battle!.fight.units.find(u => u.id === 'a2#a2u')).toBeUndefined();
+  expect(a2().state).toBe('travelling');
+
+  // Advance tick 6: a2 hops and arrives at t2 → joinFight
+  advance(s, []);
+  expect(a2().state).toBe('contested');
+  expect(a2().tile).toBe('t2');
+
+  // a2's unit must now be in the live fight (side A)
+  const liveUnits = (s as MapState).battles.find(b => b.tile === 't2')!.fight.units;
+  const a2Unit = liveUnits.find(u => u.id === 'a2#a2u');
+  expect(a2Unit).toBeDefined();
+  expect(a2Unit!.side).toBe('A');
+
+  // reinforced event fired
+  expect(s.events.some(e => e.t === 'reinforced' && (e as any).tile === 't2' && (e as any).armyId === 'a2')).toBe(true);
+
+  // committedCount includes both a1 and a2 (≤ MAX_COMMIT=4)
+  expect(committedCount(s, 't2')).toBe(2);
+});
+
 it('defender win: attacker army removed, garrison survivors persist (attrited), tile stays enemy', () => {
   const s = initConquest(setupWeakAttackerStrongGarrison());
   advance(s, [{ t: 'dispatch', armyId: 'a1', toTile: 't2' }]);

@@ -1,6 +1,6 @@
 import type { MapSetup, MapCommand, MapEdge, MapTile, Army, UnitSpec, FightSetup, GridSpec, MapEvent } from '../shared/types';
 import type { FightState } from './tile-fight';
-import { initFight, stepFight } from './tile-fight';
+import { initFight, stepFight, joinFight } from './tile-fight';
 import { fnv1a } from './hash';
 import { deriveStats } from './stats';
 import { MAX_COMMIT, TRAVEL_THRESHOLD, DEFAULT_FIGHT_GRID, STEPS_PER_MAP_TICK } from '../shared/config';
@@ -172,6 +172,35 @@ function garrisonCell(grid: GridSpec, k: number): { x: number; y: number } {
   return { x: (grid.width / 2) | 0, y };
 }
 
+// Build the UnitSpec array for a single army's attacker units.
+// Ids are `${army.id}#${unit.id}`, side 'A', startHp carried from the army unit.
+// Positions are deployCell(army.gate!, grid, gateIndexStart + k) for the k-th unit.
+// gateIndexStart: 0-based offset to use for this army's first unit on its gate.
+// NOTE on same-gate stacking for join: a joining army always passes gateIndexStart=0
+// (local 0-based per the joining army's own units). Two armies on the same gate may
+// initially co-locate — same-gate stacking is a later knob; it is deterministic and
+// parity-safe (the common reinforcement case — different gates — never overlaps).
+function attackerFightSpecs(army: Army, grid: GridSpec, gateIndexStart = 0): UnitSpec[] {
+  const gate = army.gate!;
+  const specs: UnitSpec[] = [];
+  for (let k = 0; k < army.units.length; k++) {
+    const u = army.units[k]!;
+    specs.push({
+      id: `${army.id}#${u.id}`,
+      side: 'A',
+      attackKind: u.attackKind,
+      attrs: { ...u.attrs },
+      skill: u.skill,
+      traits: u.traits ? u.traits.slice() : undefined,
+      personality: u.personality ? { ...u.personality } : undefined,
+      priority: u.priority,
+      startHp: u.startHp,
+      pos: deployCell(gate, grid, gateIndexStart + k),
+    });
+  }
+  return specs;
+}
+
 // Build the FightSetup for a battle at a defended tile.
 // attackerArmies: all contesting armies targeting this tile (sorted by id).
 // bundleSeed: the map's seed (for fightSeed derivation).
@@ -186,26 +215,15 @@ function buildFightSetup(
   // Per-gate running index (tracks how many units have been placed on each gate edge)
   const gateIndex: Record<string, number> = {};
 
-  // Attacker units: armies sorted by id, units in array order
+  // Attacker units: armies sorted by id, units in array order — use shared helper
   for (const army of attackerArmies.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
     const gate = army.gate!;
     if (gateIndex[gate] === undefined) gateIndex[gate] = 0;
-    for (const u of army.units) {
-      const k: number = gateIndex[gate] as number;
-      gateIndex[gate] = k + 1;
-      units.push({
-        id: `${army.id}#${u.id}`,
-        side: 'A',
-        attackKind: u.attackKind,
-        attrs: { ...u.attrs },
-        skill: u.skill,
-        traits: u.traits ? u.traits.slice() : undefined,
-        personality: u.personality ? { ...u.personality } : undefined,
-        priority: u.priority,
-        startHp: u.startHp,
-        pos: deployCell(gate, grid, k),
-      });
+    const start: number = gateIndex[gate] as number;
+    for (const spec of attackerFightSpecs(army, grid, start)) {
+      units.push(spec);
     }
+    gateIndex[gate] = start + army.units.length;
   }
 
   // Garrison units: interior center column, distinct rows
@@ -279,7 +297,10 @@ function resolveArrival(state: MapState, army: Army): void {
     // Check if a battle is already active for this tile
     const existing = state.battles.find(b => b.tile === tile.id);
     if (existing) {
-      // Task 5: joinFight — for now just mark contested, don't open a second battle
+      // Task 5: continuous reinforcement — join the live fight instead of opening a second battle.
+      // DEFAULT_FIGHT_GRID has the same dimensions as the battle's grid (all battles share it).
+      joinFight(existing.fight, attackerFightSpecs(army, DEFAULT_FIGHT_GRID));
+      state.events.push({ t: 'reinforced', tile: tile.id, armyId: army.id });
     } else {
       // Gather all contested attacker armies targeting this tile (includes just-arrived one)
       const attackerArmies = state.armies.filter(
