@@ -16,7 +16,8 @@ const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(readFileSync(join(root, 'dist', 'sim-bundle.js'), 'utf8'), sandbox); // → sandbox.Sim
 vm.runInContext(readFileSync(join(here, 'setups.js'), 'utf8'), sandbox);             // → sandbox.SETUPS
-const { Sim, SETUPS } = sandbox;
+vm.runInContext(readFileSync(join(root, 'dist', 'meta-bundle.js'), 'utf8'), sandbox); // → sandbox.Meta
+const { Sim, SETUPS, Meta } = sandbox;
 
 function fail(msg) { console.error('SMOKE FAIL:', msg); process.exit(1); }
 if (!Sim || !Sim.initRun || !Sim.runTick) fail('Sim.initRun/runTick missing from bundle');
@@ -141,6 +142,19 @@ while (rE.status === 'active' && Sim.hasPendingActivity(rE.map) && guard < 1000)
 if (!sawMarch) fail('E: enemy army should have marched (travelling) at some point');
 if (rE.map.tiles.find((t) => t.id === 't').owner !== 'enemy') fail('E: enemy army should have taken the undefended target t');
 console.log('enemy army      : OK (E marches → strikes → resolves)');
+
+// (F) seeded map generation → valid + playable through the real sim
+if (typeof Meta?.generateMap !== 'function') fail('Meta.generateMap missing from meta-bundle');
+const colOfF = (id) => parseInt(id.slice(1, id.indexOf('r')), 10);
+const genA = Meta.generateMap(7, 'medium');
+const genB = Meta.generateMap(7, 'medium');
+if (JSON.stringify(genA) !== JSON.stringify(genB)) fail('F: generateMap not deterministic for the same seed');
+const rF = Sim.initRun(JSON.parse(JSON.stringify(genA)), 7);
+let gI = 0;
+for (; gI < 600 && rF.status === 'active'; gI++) Sim.runTick(rF, autopilot(rF.map));
+if (rF.status === 'active') fail('F: generated map did not reach a terminal state in 600 ticks');
+if (!rF.map.tiles.some((t) => t.owner === 'player' && colOfF(t.id) >= 1)) fail('F: player captured no enemy tile on the generated map');
+console.log('map-gen         : OK (F generate → play → terminal: ' + rF.status + ' in ' + gI + ' ticks)');
 
 console.log('\nSMOKE OK');
 

@@ -7,6 +7,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
     "bundle": "esbuild sim/index.ts --bundle --format=iife --global-name=Sim --target=es2015 --outfile=dist/sim-bundle.js",
+    "bundle:meta": "esbuild meta/index.ts --bundle --format=iife --global-name=Meta --target=es2015 --outfile=dist/meta-bundle.js",
     "parity": "node tools/parity/parity.mjs"
   },
   "devDependencies": {
