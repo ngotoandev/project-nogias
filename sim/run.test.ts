@@ -775,3 +775,88 @@ it("an enemy army that destroys the player's LAST army loses the run", () => {
   expect(run.map.tiles.find((t) => t.id === 't')!.owner).toBe('enemy');
   expect(run.status).toBe('lost');
 });
+
+// ── v4 parity pin tests for enemy march fixtures (Task 4) ────────────────────
+// Mirror the exact bundles used in tools/parity/fixtures.mjs. Topology
+// s0 (enemy, ea1) — E — s1 (enemy) — E — t so the enemy army hops s0→s1
+// before assaulting t (exercises movement, not just a same-tile strike).
+
+const marchWinBundle = {
+  version: 4 as const,
+  seed: 1,
+  setup: {
+    tiles: [
+      { id: 's0', type: 'enemy' as const, owner: 'enemy' as const,  neighbors: { E: 's1' }, garrison: [] },
+      { id: 's1', type: 'enemy' as const, owner: 'enemy' as const,  neighbors: { W: 's0', E: 't' }, garrison: [] },
+      { id: 't',  type: 'enemy' as const, owner: 'player' as const, neighbors: { W: 's1' },
+        garrison: [{ id: 'g1', side: 'B' as const, attackKind: 'melee' as const, attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }] },
+      { id: 'k',  type: 'start' as const, owner: 'player' as const, neighbors: {}, garrison: [] },
+    ],
+    armies: [{ id: 'keep', tile: 'k', units: [{ id: 'ku', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }] }],
+    enemyArmies: [{ id: 'ea1', tile: 's0', units: [{ id: 'e1', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }] }],
+  },
+  script: [] as [],
+};
+
+const marchRepelledBundle = {
+  version: 4 as const,
+  seed: 1,
+  setup: {
+    tiles: [
+      { id: 's0', type: 'enemy' as const, owner: 'enemy' as const,  neighbors: { E: 's1' }, garrison: [] },
+      { id: 's1', type: 'enemy' as const, owner: 'enemy' as const,  neighbors: { W: 's0', E: 't' }, garrison: [] },
+      { id: 't',  type: 'enemy' as const, owner: 'player' as const, neighbors: { W: 's1' }, garrison: [] },
+    ],
+    armies: [{ id: 'd', tile: 't', units: [{ id: 'du', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }] }],
+    enemyArmies: [{ id: 'ea1', tile: 's0', units: [{ id: 'e1', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }] }],
+  },
+  script: [] as [],
+};
+
+const marchLethalBundle = {
+  version: 4 as const,
+  seed: 1,
+  setup: {
+    tiles: [
+      { id: 's0', type: 'enemy' as const, owner: 'enemy' as const,  neighbors: { E: 's1' }, garrison: [] },
+      { id: 's1', type: 'enemy' as const, owner: 'enemy' as const,  neighbors: { W: 's0', E: 't' }, garrison: [] },
+      { id: 't',  type: 'enemy' as const, owner: 'player' as const, neighbors: { W: 's1' }, garrison: [] },
+    ],
+    armies: [{ id: 'd', tile: 't', units: [{ id: 'du', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }] }],
+    enemyArmies: [{ id: 'ea1', tile: 's0', units: [{ id: 'e1', side: 'A' as const, attackKind: 'melee' as const, attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }] }],
+  },
+  script: [] as [],
+};
+
+it('enemy-march-win-seed1 pin: strong enemy army marches s0→s1→ assaults + wins → t enemy, enemyArmies empty, keep survives → active (hash 6b56ebc8)', () => {
+  const r = runScriptedRun(marchWinBundle);
+  expect(r.hash).toBe('6b56ebc8');
+  // postcondition via direct run: t flips enemy (ea1 becomes its garrison), enemyArmies consumed, keep survives, status active
+  const run = initRun(marchWinBundle.setup, marchWinBundle.seed);
+  for (let i = 0; i < 200 && run.status === 'active'; i++) runTick(run, []);
+  expect(run.map.tiles.find((x) => x.id === 't')!.owner).toBe('enemy');    // t flipped
+  expect(run.map.enemyArmies.length).toBe(0);                                // ea1 consumed → became garrison
+  expect(run.map.armies.find((a) => a.id === 'keep')).toBeDefined();         // keep survives
+  expect(run.status).toBe('active');                                         // not lost
+});
+
+it('enemy-march-repelled-seed1 pin: weak enemy army marches and is repelled by strong defender d → t stays player, ea1 destroyed → active (hash 5dea20f9)', () => {
+  const r = runScriptedRun(marchRepelledBundle);
+  expect(r.hash).toBe('5dea20f9');
+  // postcondition via direct run: t stays player, ea1 destroyed (consumed marching army removed), status active
+  const run = initRun(marchRepelledBundle.setup, marchRepelledBundle.seed);
+  for (let i = 0; i < 200 && run.status === 'active'; i++) runTick(run, []);
+  expect(run.map.tiles.find((x) => x.id === 't')!.owner).toBe('player');   // t held
+  expect(run.map.enemyArmies.length).toBe(0);                                // ea1 destroyed, not garrisoned anywhere
+  expect(run.status).toBe('active');
+});
+
+it("enemy-march-lethal-seed1 pin: strong enemy army marches and destroys the player's ONLY army d → t enemy, status lost (hash 7955408c)", () => {
+  const r = runScriptedRun(marchLethalBundle);
+  expect(r.hash).toBe('7955408c');
+  // postcondition via direct run: t flips enemy, last player army gone → status lost
+  const run = initRun(marchLethalBundle.setup, marchLethalBundle.seed);
+  for (let i = 0; i < 200 && run.status === 'active'; i++) runTick(run, []);
+  expect(run.map.tiles.find((x) => x.id === 't')!.owner).toBe('enemy');    // t flipped
+  expect(run.status).toBe('lost');                                           // only army destroyed → lost
+});

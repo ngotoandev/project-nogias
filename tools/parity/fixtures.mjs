@@ -23,6 +23,9 @@
 //   run-sortie-win-seed1             (094fddf6) — strong enemy garrison sorties weak player defender; sortie wins → t flips enemy; keep survives → active
 //   run-sortie-repelled-seed1        (d5034dd6) — weak enemy garrison sorties strong player defender; defender repels → t stays player → active
 //   run-sortie-lethal-seed1          (e33b0318) — strong enemy garrison sorties player's ONLY army; sortie wins → armies empty → lost
+//   enemy-march-win-seed1            (6b56ebc8) — strong enemy army marches s0→s1→ assaults defended t and wins; t flips enemy; keep survives → active
+//   enemy-march-repelled-seed1       (5dea20f9) — weak enemy army marches and assaults strong defender d; d repels → ea1 destroyed, t stays player → active
+//   enemy-march-lethal-seed1         (7955408c) — strong enemy army marches and destroys player's ONLY army d → status lost
 // Add more {name, expectedHash, bundle} entries here to broaden coverage.
 export const FIXTURES = [
   {
@@ -586,5 +589,48 @@ export const FIXTURES = [
       },
       script: [],
     },
+  },
+  {
+    // enemy-march-win-seed1: strong enemy army marches s0→s1→ assaults defended t (weak garrison) and WINS;
+    // player keeps an isolated army 'keep' so the run stays active. t flips enemy, ea1 becomes its garrison.
+    name: 'enemy-march-win-seed1', expectedHash: '6b56ebc8',
+    bundle: { version: 4, seed: 1, setup: {
+      tiles: [
+        { id: 's0', type: 'enemy', owner: 'enemy',  neighbors: { E: 's1' }, garrison: [] },
+        { id: 's1', type: 'enemy', owner: 'enemy',  neighbors: { W: 's0', E: 't' }, garrison: [] },
+        { id: 't',  type: 'enemy', owner: 'player', neighbors: { W: 's1' },
+          garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }] },
+        { id: 'k',  type: 'start', owner: 'player', neighbors: {}, garrison: [] },
+      ],
+      armies: [{ id: 'keep', tile: 'k', units: [{ id: 'ku', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }] }],
+      enemyArmies: [{ id: 'ea1', tile: 's0', units: [{ id: 'e1', side: 'A', attackKind: 'melee', attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }] }],
+    }, script: [] },
+  },
+  {
+    // enemy-march-repelled-seed1: weak enemy army marches and assaults t defended by a strong player army d;
+    // d repels → ea1 destroyed, t stays player, run active.
+    name: 'enemy-march-repelled-seed1', expectedHash: '5dea20f9',
+    bundle: { version: 4, seed: 1, setup: {
+      tiles: [
+        { id: 's0', type: 'enemy', owner: 'enemy',  neighbors: { E: 's1' }, garrison: [] },
+        { id: 's1', type: 'enemy', owner: 'enemy',  neighbors: { W: 's0', E: 't' }, garrison: [] },
+        { id: 't',  type: 'enemy', owner: 'player', neighbors: { W: 's1' }, garrison: [] },
+      ],
+      armies: [{ id: 'd', tile: 't', units: [{ id: 'du', side: 'A', attackKind: 'melee', attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }] }],
+      enemyArmies: [{ id: 'ea1', tile: 's0', units: [{ id: 'e1', side: 'A', attackKind: 'melee', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }] }],
+    }, script: [] },
+  },
+  {
+    // enemy-march-lethal-seed1: strong enemy army marches and destroys the player's ONLY army d → status 'lost'.
+    name: 'enemy-march-lethal-seed1', expectedHash: '7955408c',
+    bundle: { version: 4, seed: 1, setup: {
+      tiles: [
+        { id: 's0', type: 'enemy', owner: 'enemy',  neighbors: { E: 's1' }, garrison: [] },
+        { id: 's1', type: 'enemy', owner: 'enemy',  neighbors: { W: 's0', E: 't' }, garrison: [] },
+        { id: 't',  type: 'enemy', owner: 'player', neighbors: { W: 's1' }, garrison: [] },
+      ],
+      armies: [{ id: 'd', tile: 't', units: [{ id: 'du', side: 'A', attackKind: 'melee', attrs: { str: 1, agi: 1, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }] }],
+      enemyArmies: [{ id: 'ea1', tile: 's0', units: [{ id: 'e1', side: 'A', attackKind: 'melee', attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }] }],
+    }, script: [] },
   },
 ];
