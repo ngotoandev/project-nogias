@@ -182,6 +182,7 @@
       case 'battleOpened': return '⚔ battle @ ' + e.tile + ' (' + e.attackers.join(',') + ')';
       case 'reinforced': return '+ ' + e.armyId + ' joined @ ' + e.tile;
       case 'repelled': return '✗ repelled @ ' + e.tile;
+      case 'sortie': return '⚔ sortie @ ' + e.tile + ' (from ' + e.from + ')';
       case 'retreated': return e.armyId + ' retreated → ' + e.to;
       case 'slotFreed': return 'slot freed @ ' + e.tile + ' (' + e.armyId + ')';
       case 'rejected': return '⃠ ' + e.armyId + ': ' + e.reason;

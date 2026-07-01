@@ -715,6 +715,9 @@ function advanceEnemyArmies(state: MapState, travellingBefore: Set<string>): voi
       }
       const from = army.tile;
       const next = army.route.shift()!;
+      // NOTE: intermediate route tiles are not re-validated for ownership mid-march. A player
+      //   capturing one the same tick is unreachable in v1 (spec-deferred mid-march interception);
+      //   the TARGET's ownership IS re-checked at the route.length===1 disband guard above.
       army.tile = next;                                      // hop onto next enemy tile
       state.events.push({ t: 'hopped', armyId: army.id, from, to: next });
     }
