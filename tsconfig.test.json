@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["shared", "sim"],
+  "include": ["shared", "sim", "meta"],
   "exclude": []
 }
