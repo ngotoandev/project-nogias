@@ -104,18 +104,22 @@ const after = rC.map.armies[0].units[0].startHp;
 if (!(after > before)) fail('C: a wait-beat on a rest tile should heal one increment (' + before + '→' + after + ')');
 if (Sim.hasPendingActivity(rC.map)) fail('C: still idle after a wait-beat → should stay frozen');
 
-// (D) a wait-beat that opens an enemy sortie auto-resolves under commit-and-resolve
+// (D) a wait-beat opens an enemy sortie, which auto-resolves, then the world FREEZES (game continues).
+// Weak enemy attacker (str=1) vs strong stationary defender (str=20) → repelled (mirrors frozen fixture
+// run-sortie-repelled-seed1), so the run stays active and re-freezes — the spec's "resolves before freezing".
 const sortieSetup = { enemyReclaims: true, tiles: [
-  { id: 's', type: 'enemy', owner: 'enemy', neighbors: { E: 't' }, garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 5, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }] },
+  { id: 's', type: 'enemy', owner: 'enemy', neighbors: { E: 't' }, garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 1, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }] },
   { id: 't', type: 'enemy', owner: 'player', neighbors: { W: 's' }, garrison: [] },
-], armies: [{ id: 'd', tile: 't', units: [{ id: 'du', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }] }] };
+], armies: [{ id: 'd', tile: 't', units: [{ id: 'du', side: 'A', attackKind: 'melee', attrs: { str: 20, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }] }] };
 const rD = Sim.initRun(JSON.parse(JSON.stringify(sortieSetup)), 1);
 if (Sim.hasPendingActivity(rD.map)) fail('D: sortie setup should start quiescent');
 Sim.runTick(rD, []);                                   // wait-beat → enemy seizes the window, sortie opens
-if (!(Sim.hasPendingActivity(rD.map) || rD.status !== 'active')) fail('D: wait-beat should have opened an enemy sortie (pending battle)');
-resolve(rD);
-if (rD.status === 'active' && Sim.hasPendingActivity(rD.map)) fail('D: enemy sortie should auto-resolve to quiescence');
-console.log('contract        : OK (A idle-frozen · B commit-resolve · C wait-heals · D sortie auto-resolves)');
+if (!Sim.hasPendingActivity(rD.map)) fail('D: wait-beat should have opened an enemy sortie (a pending battle)');
+resolve(rD);                                           // commit-and-resolve plays the sortie out
+if (Sim.hasPendingActivity(rD.map)) fail('D: enemy sortie should auto-resolve to quiescence');
+if (rD.status !== 'active') fail('D: a repelled sortie should leave the run active (frozen — your move)');
+if (rD.map.tiles.find((t) => t.id === 't').owner !== 'player') fail('D: defender should have repelled — tile stays player');
+console.log('contract        : OK (A idle-frozen · B commit-resolve · C wait-heals · D sortie resolves→freezes)');
 
 console.log('\nSMOKE OK');
 
