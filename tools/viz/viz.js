@@ -30,6 +30,16 @@
     render();
   }
 
+  function startGenerated() {
+    const Meta = globalThis.Meta;
+    if (!Meta || !Meta.generateMap) { alert('dist/meta-bundle.js not loaded — run `npm run bundle:meta`'); return; }
+    const seed = parseInt($('seed').value, 10) || 0;
+    const size = $('size').value;
+    run = Sim.initRun(Meta.generateMap(seed, size), seed);
+    layout = computeLayout(run.map.tiles);
+    selected = null; stopResolve(); render();
+  }
+
   // One player-initiated beat, then auto-resolve its consequences to quiescence.
   function beat(cmds) {
     if (!run || run.status !== 'active') return;
@@ -210,6 +220,7 @@
   });
 
   $('new').addEventListener('click', start);
+  $('gen').addEventListener('click', startGenerated);
   $('step').addEventListener('click', () => beat([]));               // deliberate wait-beat
   $('extract').addEventListener('click', () => beat([{ t: 'extract' }]));
   $('speed').addEventListener('change', () => { if (timer) { stopResolve(); startResolve(); } });

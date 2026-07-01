@@ -33,6 +33,8 @@
     <h1>Nogias sim visualizer</h1>
     <label>map <select id="setup"><option value="campaign">campaign</option><option value="skirmish">skirmish</option></select></label>
     <label>seed <input id="seed" type="number" value="1" style="width:56px; background:#2a3038; color:#d7dce3; border:1px solid #3a424d; border-radius:5px; padding:3px;" /></label>
+    <label>size <select id="size"><option value="small">small</option><option value="medium" selected>medium</option><option value="large">large</option></select></label>
+    <button id="gen">Generate ⚲</button>
     <button id="new">New run</button>
     <button id="step">Wait ⏭</button>
     <label>speed <select id="speed"><option value="450">slow</option><option value="220" selected>med</option><option value="80">fast</option></select></label>
@@ -49,6 +51,7 @@
     </div>
   </div>
   <script src="../../dist/sim-bundle.js"></script>
+  <script src="../../dist/meta-bundle.js"></script>
   <script src="setups.js"></script>
   <script src="viz.js"></script>
 </body>
