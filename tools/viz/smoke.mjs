@@ -73,6 +73,50 @@ console.log('final tiles      :', m.tiles.map((t) => t.id + ':' + t.owner).join(
 console.log('final armies     :', m.armies.map((a) => a.id + '@' + a.tile + '/' + a.state + '×' + a.units.length).join('  ') || '(none)');
 console.log('canvas data path : OK (tiles/armies/battle shapes present)');
 if (frame) { console.log('\n── one active-battle frame (for inline preview) ──'); console.log('FRAME ' + JSON.stringify(frame)); }
+
+// ── interactive-contract assertions (activity-gated pacing) ───────────────────
+if (typeof Sim.hasPendingActivity !== 'function') fail('Sim.hasPendingActivity missing from bundle');
+const resolve = (r) => { let n = 0; while (r.status === 'active' && Sim.hasPendingActivity(r.map) && n < 1000) { Sim.runTick(r, []); n++; } return n; };
+
+// (A) idle = frozen: a fresh run with everything garrisoned has no pending activity
+const rA = Sim.initRun(JSON.parse(JSON.stringify(SETUPS.campaign)), 1);
+if (Sim.hasPendingActivity(rA.map)) fail('A: fresh run should be quiescent (idle = frozen)');
+
+// (B) commit-and-resolve: dispatch to an undefended enemy neighbor → resolves then freezes
+const t0 = rA.map.tiles.find((t) => t.owner === 'player');
+const target = ['N','S','E','W'].map((e) => t0.neighbors[e]).find((nb) => nb && rA.map.tiles.find((t) => t.id === nb && t.owner !== 'player'));
+const army = rA.map.armies.find((a) => a.tile === t0.id);
+if (target && army) {
+  Sim.runTick(rA, [{ t: 'dispatch', armyId: army.id, toTile: target }]);
+  if (!Sim.hasPendingActivity(rA.map)) fail('B: dispatch should create pending activity (a march)');
+  resolve(rA);
+  if (rA.status === 'active' && Sim.hasPendingActivity(rA.map)) fail('B: should be quiescent after resolve');
+}
+
+// (C) wait-beat = exactly one tick that heals, and idle stays frozen
+const restSetup = { tiles: [{ id: 'r0', type: 'rest', owner: 'player', neighbors: {}, garrison: [] }],
+  armies: [{ id: 'a1', tile: 'r0', units: [{ id: 'u1', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 }, startHp: 3 }] }] };
+const rC = Sim.initRun(JSON.parse(JSON.stringify(restSetup)), 1);
+if (Sim.hasPendingActivity(rC.map)) fail('C: rest setup should start quiescent');
+const before = rC.map.armies[0].units[0].startHp;
+Sim.runTick(rC, []);                                   // one deliberate wait-beat
+const after = rC.map.armies[0].units[0].startHp;
+if (!(after > before)) fail('C: a wait-beat on a rest tile should heal one increment (' + before + '→' + after + ')');
+if (Sim.hasPendingActivity(rC.map)) fail('C: still idle after a wait-beat → should stay frozen');
+
+// (D) a wait-beat that opens an enemy sortie auto-resolves under commit-and-resolve
+const sortieSetup = { enemyReclaims: true, tiles: [
+  { id: 's', type: 'enemy', owner: 'enemy', neighbors: { E: 't' }, garrison: [{ id: 'g1', side: 'B', attackKind: 'melee', attrs: { str: 5, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }] },
+  { id: 't', type: 'enemy', owner: 'player', neighbors: { W: 's' }, garrison: [] },
+], armies: [{ id: 'd', tile: 't', units: [{ id: 'du', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 6, int: 3, lck: 3 }, priority: 5, pos: { x: 0, y: 0 } }] }] };
+const rD = Sim.initRun(JSON.parse(JSON.stringify(sortieSetup)), 1);
+if (Sim.hasPendingActivity(rD.map)) fail('D: sortie setup should start quiescent');
+Sim.runTick(rD, []);                                   // wait-beat → enemy seizes the window, sortie opens
+if (!(Sim.hasPendingActivity(rD.map) || rD.status !== 'active')) fail('D: wait-beat should have opened an enemy sortie (pending battle)');
+resolve(rD);
+if (rD.status === 'active' && Sim.hasPendingActivity(rD.map)) fail('D: enemy sortie should auto-resolve to quiescence');
+console.log('contract        : OK (A idle-frozen · B commit-resolve · C wait-heals · D sortie auto-resolves)');
+
 console.log('\nSMOKE OK');
 
 // compact frame the visualizer would draw

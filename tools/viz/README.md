@@ -29,3 +29,13 @@ node tools/viz/smoke.mjs
 ```
 Loads the bundle the same way the parity harness does, plays a sample run to a terminal
 state with a greedy autopilot, and asserts the state has the fields the canvas reads.
+
+## Interactive client contract (activity-gated pacing)
+
+The world advances only in player-initiated **beats**; every beat is equally the enemy's window. Idle ⇒ frozen.
+
+- **Quiescent + no input ⇒ frozen** ("your move"). `Sim.hasPendingActivity(run.map)` is the signal: true iff an army is marching/retreating or a battle is unresolved.
+- **A command ⇒ commit-and-resolve:** `runTick(run, cmds)`, then advance `while Sim.hasPendingActivity(run.map)` (animation-paced), then freeze.
+- **A wait-beat = `runTick(run, [])`:** one tick — a heal step on Rest tiles, and the enemy's window (a sortie opened here auto-resolves under the same loop). Nothing is free.
+
+`runTick` is unchanged; all pacing lives in this client loop. `smoke.mjs` asserts the four contract properties headlessly.
