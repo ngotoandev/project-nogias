@@ -43,13 +43,22 @@
     ],
   };
 
-  // ── "skirmish": one fight, quick win ──────────────────────────────────────────
+  // ── "skirmish": one fight, quick win — PLUS an enemy mobile army (`raider`,
+  // home tile t2) that marches ≥1 hop over enemy ground (t2→t1) and strikes the
+  // player's start t0. A wait-beat/step sets it marching; commit-and-resolve
+  // plays out the rest — so both the player's own assault on t1 and the
+  // enemy's counter-march on t0 are visible in the same setup. raider is
+  // deliberately weaker than a1 (1 unit, str4/agi5 vs a1's 3× str9/agi8): a
+  // fully passive player still holds t0 when it arrives (repelled, a real
+  // fight) — watching the march happen never costs the player the run.
   const skirmish = {
     tiles: [
       { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
-      { id: 't1', type: 'boss',  owner: 'enemy',  neighbors: { W: 't0' }, garrison: squad('eg', 'B', 2, 6, 5) },
+      { id: 't1', type: 'boss',  owner: 'enemy',  neighbors: { W: 't0', E: 't2' }, garrison: squad('eg', 'B', 2, 6, 5) },
+      { id: 't2', type: 'enemy', owner: 'enemy',  neighbors: { W: 't1' }, garrison: [] },
     ],
     armies: [{ id: 'a1', tile: 't0', units: squad('a1u', 'A', 3, 9, 8) }],
+    enemyArmies: [{ id: 'raider', tile: 't2', units: squad('rd', 'A', 1, 4, 5) }],
   };
 
   // computeLayout(tiles) → { tileId: {x,y} } grid coords, via BFS over N/S/E/W from tiles[0].

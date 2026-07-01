@@ -102,6 +102,25 @@
       ctx.fillStyle = '#cfd6df'; ctx.font = '10px ui-monospace, monospace';
       ctx.fillText(a.id + (wounded ? ' ♥' : ''), p.x + 14, p.y - 6);
     }
+    // enemy mobile armies (same interpolation geometry as player armies; distinct enemy-red tint)
+    const byTileE = {}; m.enemyArmies.forEach((a) => { (byTileE[a.tile] = byTileE[a.tile] || []).push(a); });
+    for (const a of m.enemyArmies) {
+      let p;
+      if ((a.state === 'travelling' || a.state === 'retreating') && a.route && a.route.length) {
+        const from = tileCenter(a.tile), to = tileCenter(a.route[0]), f = Math.max(0, Math.min(1, a.travelGauge / THRESH));
+        p = { x: from.x + (to.x - from.x) * f, y: from.y + (to.y - from.y) * f };
+      } else {
+        const grp = byTileE[a.tile], i = grp.indexOf(a);
+        const c = tileCenter(a.tile); p = { x: c.x - 18 + i * 20, y: c.y + 44 }; // offset below the player-army row
+      }
+      ctx.beginPath(); ctx.arc(p.x, p.y, 11, 0, 7);
+      ctx.fillStyle = OWNER_LINE.enemy; ctx.fill(); // '#b5564d' — distinct from STATE-tinted player markers
+      ctx.strokeStyle = '#0e1116'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = '#0e1116'; ctx.font = '700 11px ui-monospace, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.fillText('' + a.units.length, p.x, p.y); ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillStyle = '#d98c84'; ctx.font = '10px ui-monospace, monospace';
+      ctx.fillText(a.id, p.x + 14, p.y - 6);
+    }
     drawBattles();
     sidebar();
   }
@@ -137,10 +156,15 @@
       ? 'Selected <b>' + selected + '</b>. Click a non-owned tile to dispatch (or an owned army to reselect).'
       : '<span class="hint">Click one of your armies, then a target tile to dispatch.</span>';
     // roster
-    $('roster').innerHTML = m.armies.map((a) => {
+    const rosterRow = (a) => {
       const hp = a.units.map((u) => (u.startHp != null ? u.startHp : '·')).join('/');
       return '<div>' + (a.id === selected ? '▸ ' : '') + '<b>' + a.id + '</b> [' + a.tile + ' ' + a.state + (a.target ? '→' + a.target : '') + '] ×' + a.units.length + ' <span class="hint">♥' + hp + '</span></div>';
-    }).join('') || '<span class="hint">no armies</span>';
+    };
+    const playerRoster = m.armies.map(rosterRow).join('') || '<span class="hint">no armies</span>';
+    const enemyRoster = m.enemyArmies.length
+      ? '<div class="hint" style="margin-top:6px;color:#d98c84">Enemy</div>' + m.enemyArmies.map(rosterRow).join('')
+      : '';
+    $('roster').innerHTML = playerRoster + enemyRoster;
     // events (tail)
     const evs = m.events.slice(-16).reverse().map((e) => '<div class="ev">' + fmtEv(e) + '</div>').join('');
     $('log').innerHTML = evs;

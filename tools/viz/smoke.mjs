@@ -121,6 +121,27 @@ if (rD.status !== 'active') fail('D: a repelled sortie should leave the run acti
 if (rD.map.tiles.find((t) => t.id === 't').owner !== 'player') fail('D: defender should have repelled — tile stays player');
 console.log('contract        : OK (A idle-frozen · B commit-resolve · C wait-heals · D sortie resolves→freezes)');
 
+// (E) enemy mobile army: marches (sustains pending) then strikes; the run resolves.
+// A freshly-garrisoned enemy army starts idle (hasPendingActivity is false at t0 — mirrors
+// conquest-map.test.ts "no gauge the tick it sets out"); the FIRST tick is what sets it marching
+// (garrisoned→travelling), same idiom as (D)'s wait-beat opening a sortie.
+const marchSetup = { tiles: [
+  { id: 's0', type: 'enemy', owner: 'enemy', neighbors: { E: 's1' }, garrison: [] },
+  { id: 's1', type: 'enemy', owner: 'enemy', neighbors: { W: 's0', E: 't' }, garrison: [] },
+  { id: 't',  type: 'enemy', owner: 'player', neighbors: { W: 's1' }, garrison: [] },
+  { id: 'k',  type: 'start', owner: 'player', neighbors: {}, garrison: [] },
+], armies: [{ id: 'keep', tile: 'k', units: [{ id: 'ku', side: 'A', attackKind: 'melee', attrs: { str: 5, agi: 5, int: 1, lck: 1 }, priority: 5, pos: { x: 0, y: 0 } }] }],
+   enemyArmies: [{ id: 'ea1', tile: 's0', units: [{ id: 'e1', side: 'A', attackKind: 'melee', attrs: { str: 20, agi: 20, int: 5, lck: 5 }, priority: 5, pos: { x: 0, y: 0 } }] }] };
+const rE = Sim.initRun(JSON.parse(JSON.stringify(marchSetup)), 1);
+if (Sim.hasPendingActivity(rE.map)) fail('E: a freshly-garrisoned enemy army should start quiescent (it has not set out yet)');
+Sim.runTick(rE, []);                                   // wait-beat → the enemy army sets out (garrisoned→travelling)
+if (!Sim.hasPendingActivity(rE.map)) fail('E: enemy army should now be pending (it is marching)');
+let sawMarch = rE.map.enemyArmies.some((a) => a.state === 'travelling'), guard = 0;
+while (rE.status === 'active' && Sim.hasPendingActivity(rE.map) && guard < 1000) { Sim.runTick(rE, []); if (rE.map.enemyArmies.some((a) => a.state === 'travelling')) sawMarch = true; guard++; }
+if (!sawMarch) fail('E: enemy army should have marched (travelling) at some point');
+if (rE.map.tiles.find((t) => t.id === 't').owner !== 'enemy') fail('E: enemy army should have taken the undefended target t');
+console.log('enemy army      : OK (E marches → strikes → resolves)');
+
 console.log('\nSMOKE OK');
 
 // compact frame the visualizer would draw
