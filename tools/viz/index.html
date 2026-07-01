@@ -34,8 +34,7 @@
     <label>map <select id="setup"><option value="campaign">campaign</option><option value="skirmish">skirmish</option></select></label>
     <label>seed <input id="seed" type="number" value="1" style="width:56px; background:#2a3038; color:#d7dce3; border:1px solid #3a424d; border-radius:5px; padding:3px;" /></label>
     <button id="new">New run</button>
-    <button id="step">Step ▷</button>
-    <button id="auto">Auto ▶</button>
+    <button id="step">Wait ⏭</button>
     <label>speed <select id="speed"><option value="450">slow</option><option value="220" selected>med</option><option value="80">fast</option></select></label>
     <button id="extract">Extract ⏏</button>
     <span class="note">dev harness · drives the real <code>Sim.initRun/runTick</code> from <code>dist/sim-bundle.js</code></span>
@@ -43,7 +42,7 @@
   <div id="wrap">
     <canvas id="cv" width="640" height="560"></canvas>
     <div id="side">
-      <div class="panel"><h2>Run</h2><div id="status">—</div><div id="meta" class="hint"></div></div>
+      <div class="panel"><h2>Run</h2><div id="status">—</div><div id="meta" class="hint"></div><div id="phase" class="hint"></div></div>
       <div class="panel"><h2>Order</h2><div id="sel" class="hint">Click one of your armies, then click a target tile to dispatch.</div></div>
       <div class="panel"><h2>Armies</h2><div id="roster"></div></div>
       <div class="panel"><h2>Events</h2><div id="log"></div></div>

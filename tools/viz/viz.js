@@ -17,7 +17,7 @@
   const TYPE_TAG = { boss: '★BOSS', rest: 'REST+', muster: 'MUSTER', boon: 'BOON+', cache: 'CACHE', start: 'start', enemy: 'enemy' };
 
   // state
-  let run = null, layout = {}, rects = {}, selected = null, pending = [], timer = null;
+  let run = null, layout = {}, rects = {}, selected = null, timer = null;
 
   const CW = 168, CH = 150, BOX_W = 132, BOX_H = 96, PAD = 28;
 
@@ -26,25 +26,28 @@
     const seed = parseInt($('seed').value, 10) || 0;
     run = Sim.initRun(JSON.parse(JSON.stringify(SETUPS[name])), seed); // deep-copy: setups are reused
     layout = computeLayout(run.map.tiles);
-    selected = null; pending = []; stopAuto();
+    selected = null; stopResolve();
     render();
   }
 
-  function tick() {
-    if (!run || run.status !== 'active') { stopAuto(); return; }
-    const cmds = pending; pending = [];
-    Sim.runTick(run, cmds);
-    if (run.status !== 'active') stopAuto();
-    render();
-  }
-
-  function stopAuto() { if (timer) { clearInterval(timer); timer = null; } $('auto').classList.remove('on'); $('auto').textContent = 'Auto ▶'; }
-  function toggleAuto() {
-    if (timer) { stopAuto(); return; }
+  // One player-initiated beat, then auto-resolve its consequences to quiescence.
+  function beat(cmds) {
     if (!run || run.status !== 'active') return;
-    timer = setInterval(tick, parseInt($('speed').value, 10));
-    $('auto').classList.add('on'); $('auto').textContent = 'Auto ⏸';
+    Sim.runTick(run, cmds || []);      // the beat the player chose (command(s), or [] = wait)
+    render();
+    startResolve();                    // commit-and-resolve: play out any live activity
   }
+  function startResolve() {
+    if (timer) return;
+    if (!run || run.status !== 'active' || !Sim.hasPendingActivity(run.map)) { render(); return; }
+    timer = setInterval(resolveStep, parseInt($('speed').value, 10));
+  }
+  function resolveStep() {
+    if (!run || run.status !== 'active' || !Sim.hasPendingActivity(run.map)) { stopResolve(); render(); return; }
+    Sim.runTick(run, []);              // advance one tick; nothing is free — enemy acts in this window too
+    render();
+  }
+  function stopResolve() { if (timer) { clearInterval(timer); timer = null; } }
 
   // ── geometry ───────────────────────────────────────────────────────────────
   function bounds() {
@@ -143,7 +146,8 @@
     $('log').innerHTML = evs;
     // buttons
     const done = run.status !== 'active';
-    $('step').disabled = done; $('auto').disabled = done; $('extract').disabled = done;
+    $('step').disabled = done; $('extract').disabled = done;
+    $('phase').textContent = done ? '' : (timer ? 'resolving…' : 'your move — frozen');
   }
 
   function fmtEv(e) {
@@ -170,7 +174,7 @@
     if (!hit) { selected = null; render(); return; }
     const tile = run.map.tiles.find((t) => t.id === hit);
     if (selected && tile.owner !== 'player') {
-      pending.push({ t: 'dispatch', armyId: selected, toTile: hit }); // sim validates (rejects if busy/unreachable)
+      beat([{ t: 'dispatch', armyId: selected, toTile: hit }]); // commit-and-resolve; sim validates
       selected = null;
     } else {
       const here = run.map.armies.filter((a) => a.tile === hit);
@@ -181,10 +185,9 @@
   });
 
   $('new').addEventListener('click', start);
-  $('step').addEventListener('click', tick);
-  $('auto').addEventListener('click', toggleAuto);
-  $('extract').addEventListener('click', () => { pending.push({ t: 'extract' }); tick(); });
-  $('speed').addEventListener('change', () => { if (timer) { stopAuto(); toggleAuto(); } });
+  $('step').addEventListener('click', () => beat([]));               // deliberate wait-beat
+  $('extract').addEventListener('click', () => beat([{ t: 'extract' }]));
+  $('speed').addEventListener('change', () => { if (timer) { stopResolve(); startResolve(); } });
 
   // helpers
   function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
