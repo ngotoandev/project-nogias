@@ -24,6 +24,7 @@ export interface MapState {
   events: MapEvent[];
   seed: number;
   battles: MapBattle[];
+  enemyArmies: Army[];
 }
 
 export function initConquest(setup: MapSetup, seed = 0): MapState {
@@ -31,7 +32,9 @@ export function initConquest(setup: MapSetup, seed = 0): MapState {
     .map((t) => ({ ...t, neighbors: { ...t.neighbors }, garrison: t.garrison.map(cloneSpec) }));
   const armies: Army[] = setup.armies.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((a) => ({ id: a.id, units: a.units.map(cloneSpec), tile: a.tile, state: 'garrisoned', travelGauge: 0 }));
-  return { tiles, armies, totalTicks: 0, events: [], seed, battles: [] };
+  const enemyArmies: Army[] = (setup.enemyArmies ?? []).slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map((a) => ({ id: a.id, units: a.units.map(cloneSpec), tile: a.tile, state: 'garrisoned', travelGauge: 0 }));
+  return { tiles, armies, totalTicks: 0, events: [], seed, battles: [], enemyArmies };
 }
 
 // ── Conquest helpers ─────────────────────────────────────────────────────────
@@ -615,6 +618,7 @@ export function openSortie(state: MapState, source: MapTile, target: MapTile): v
 export function hasPendingActivity(map: MapState): boolean {
   return (
     map.armies.some((a) => a.state === 'travelling' || a.state === 'retreating') ||
+    map.enemyArmies.some((a) => a.state === 'travelling') ||
     map.battles.some((b) => !b.fight.outcome)
   );
 }
@@ -630,5 +634,9 @@ export function hashMap(state: MapState): string {
   ).join(',');
   const battlePart = [...state.battles].sort((x, y) => x.tile < y.tile ? -1 : x.tile > y.tile ? 1 : 0)
     .map((b) => `${b.tile}=${hashFight(b.fight.units, b.fight.totalTicks)}`).join(',');
-  return fnv1a(`${tilePart}#${armyPart}#${battlePart}#${state.totalTicks}`);
+  const enemyPart = state.enemyArmies.length === 0 ? '' :
+    '#E:' + [...state.enemyArmies].sort(byId).map((a) =>
+      `${a.id}:${a.tile}:${a.state}:${a.target ?? '-'}:${a.units.map(u => `${u.id}@${u.startHp ?? deriveStats(u.attrs, u.attackKind).maxHp}`).join('/')}`
+    ).join(',');
+  return fnv1a(`${tilePart}#${armyPart}#${battlePart}#${state.totalTicks}${enemyPart}`);
 }

@@ -943,3 +943,35 @@ describe('hasPendingActivity', () => {
     expect(hasPendingActivity(map)).toBe(true);
   });
 });
+
+// ── enemyArmies foundation (additive: separate from state.armies) ────────────
+
+describe('enemyArmies foundation', () => {
+  it('initConquest builds enemyArmies (garrisoned) from setup.enemyArmies', () => {
+    const map = initConquest({ tiles: [
+      { id: 's', type: 'enemy', owner: 'enemy', neighbors: {}, garrison: [] },
+    ], armies: [], enemyArmies: [{ id: 'ea1', tile: 's', units: [u('e1','B',5)] }] } as any, 0);
+    expect(map.enemyArmies.length).toBe(1);
+    expect(map.enemyArmies[0]!.state).toBe('garrisoned');
+    expect(map.enemyArmies[0]!.tile).toBe('s');
+  });
+  it('defaults enemyArmies to [] when setup omits it', () => {
+    const map = initConquest({ tiles: [{ id: 't0', type: 'start', owner: 'player', neighbors: {}, garrison: [] }], armies: [] } as any, 0);
+    expect(map.enemyArmies).toEqual([]);
+  });
+  it('hasPendingActivity is true while an enemy army is travelling, false when garrisoned', () => {
+    const map = initConquest({ tiles: [{ id: 's', type: 'enemy', owner: 'enemy', neighbors: {}, garrison: [] }],
+      armies: [], enemyArmies: [{ id: 'ea1', tile: 's', units: [u('e1','B',5)] }] } as any, 0);
+    expect(hasPendingActivity(map)).toBe(false);           // garrisoned
+    map.enemyArmies[0]!.state = 'travelling';
+    expect(hasPendingActivity(map)).toBe(true);            // marching sustains time
+  });
+  it('hashMap is unchanged for empty enemyArmies but changes when one is present', () => {
+    const base = { tiles: [{ id: 't0', type: 'start', owner: 'player', neighbors: {}, garrison: [] }], armies: [] };
+    const h0 = hashMap(initConquest(base as any, 0));
+    const h1 = hashMap(initConquest(base as any, 0));
+    expect(h1).toBe(h0);                                    // empty ⇒ identical
+    const withEnemy = initConquest({ ...base, enemyArmies: [{ id: 'ea1', tile: 't0', units: [u('e1','B',5)] }] } as any, 0);
+    expect(hashMap(withEnemy)).not.toBe(h0);               // present ⇒ folded
+  });
+});
