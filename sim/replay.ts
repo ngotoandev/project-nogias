@@ -1,7 +1,7 @@
 import type { FightResult, ReplayBundle, ReplayResult, ScriptedFightBundle, ConquestBundle, RunBundle } from '../shared/types';
 import { runTileFight, initFight, stepFight, fightResult, joinFight, orderRetreat } from './tile-fight';
 import type { MapState } from './conquest-map';
-import { initConquest, advance, hashMap } from './conquest-map';
+import { initConquest, advance, hashMap, hasPendingActivity } from './conquest-map';
 import { initRun, runTick, hashRun } from './run';
 import type { RunState } from './run';
 import { RUN_MAX_TICKS } from '../shared/config';
@@ -18,9 +18,8 @@ export function runScriptedConquest(bundle: ConquestBundle): { hash: string; tic
   const s: MapState = initConquest(bundle.setup, bundle.seed);
   const cmdsAt = (t: number) => bundle.script.filter((a) => a.atTick === t).flatMap((a) => a.commands);
   const pending = () =>
-    s.armies.some((a) => a.state === 'travelling' || a.state === 'retreating') ||
-    bundle.script.some((a) => a.atTick >= s.totalTicks) ||
-    s.battles.some((b) => !b.fight.outcome);
+    hasPendingActivity(s) ||
+    bundle.script.some((a) => a.atTick >= s.totalTicks);
   while (pending() && s.totalTicks < CONQUEST_MAX_TICKS) advance(s, cmdsAt(s.totalTicks));
   return { hash: hashMap(s), ticks: s.totalTicks };
 }
@@ -57,9 +56,8 @@ export function runScriptedRun(bundle: RunBundle): { hash: string; status: RunSt
   const run = initRun(bundle.setup, bundle.seed);
   const cmdsAt = (t: number) => bundle.script.filter((a) => a.atTick === t).flatMap((a) => a.commands);
   const pending = () =>
-    run.map.armies.some((a) => a.state === 'travelling' || a.state === 'retreating') ||
-    bundle.script.some((a) => a.atTick >= run.map.totalTicks) ||
-    run.map.battles.some((b) => !b.fight.outcome);
+    hasPendingActivity(run.map) ||
+    bundle.script.some((a) => a.atTick >= run.map.totalTicks);
   while (run.status === 'active' && pending() && run.map.totalTicks < RUN_MAX_TICKS) {
     runTick(run, cmdsAt(run.map.totalTicks));
   }

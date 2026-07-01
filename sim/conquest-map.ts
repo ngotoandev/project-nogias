@@ -608,6 +608,17 @@ export function openSortie(state: MapState, source: MapTile, target: MapTile): v
   state.events.push({ t: 'sortie', tile: target.id, from: source.id });
 }
 
+// True while there is live in-flight activity: an army marching (travelling) or
+// pulling back (retreating), or a battle still resolving. The single source of
+// truth for "the world has something to advance" — the replay drivers and the
+// interactive client both gate on this (the client also checks run.status).
+export function hasPendingActivity(map: MapState): boolean {
+  return (
+    map.armies.some((a) => a.state === 'travelling' || a.state === 'retreating') ||
+    map.battles.some((b) => !b.fight.outcome)
+  );
+}
+
 // ── hashMap ──────────────────────────────────────────────────────────────────
 
 export function hashMap(state: MapState): string {

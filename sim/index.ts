@@ -3,3 +3,4 @@
 export { runReplay, runScriptedFight, runScriptedConquest, runScriptedRun } from './replay';
 export { runTileFight } from './tile-fight';
 export { initRun, runTick, hashRun } from './run';
+export { hasPendingActivity } from './conquest-map';

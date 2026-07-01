@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { initConquest, hashMap, advance, committedCount, openSortie, MapState, reconcileArmy } from './conquest-map';
+import { initConquest, hashMap, advance, committedCount, openSortie, MapState, reconcileArmy, hasPendingActivity } from './conquest-map';
 import type { MapSetup, UnitSpec, Army } from '../shared/types';
 import type { FightState } from './tile-fight';
 
@@ -906,4 +906,40 @@ it('openSortie opens an enemy-attacker battle: enemy garrison side A, player arm
   expect(sideB).toEqual(['d#du']);                                    // player army = defender
   expect(state.armies.find(a => a.id === 'd')!.state).toBe('contested');
   expect(state.events.some(e => e.t === 'sortie' && (e as any).tile === 't' && (e as any).from === 's')).toBe(true);
+});
+
+// ── hasPendingActivity ────────────────────────────────────────────────────────
+
+describe('hasPendingActivity', () => {
+  const base = (): MapSetup => ({
+    tiles: [
+      { id: 't0', type: 'start', owner: 'player', neighbors: { E: 't1' }, garrison: [] },
+      { id: 't1', type: 'enemy', owner: 'enemy', neighbors: { W: 't0' }, garrison: [] },
+    ],
+    armies: [{ id: 'a1', tile: 't0', units: [u('u1', 'A', 5)] }],
+  });
+
+  it('is false when all armies are garrisoned and no battle exists', () => {
+    const map = initConquest(base(), 0);
+    expect(map.armies[0]!.state).toBe('garrisoned');
+    expect(hasPendingActivity(map)).toBe(false);
+  });
+
+  it('is true while an army is travelling', () => {
+    const map = initConquest(base(), 0);
+    advance(map, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
+    expect(map.armies[0]!.state).toBe('travelling');
+    expect(hasPendingActivity(map)).toBe(true);
+  });
+
+  it('is true while a battle is unresolved', () => {
+    const setup = base();
+    setup.tiles[1]!.garrison = [u('g1', 'B', 5)];              // t1 now defended → travel ends in a fight
+    const map = initConquest(setup, 0);
+    advance(map, [{ t: 'dispatch', armyId: 'a1', toTile: 't1' }]);
+    for (let i = 0; i < 50 && map.battles.length === 0; i++) advance(map, []); // travel to contact
+    expect(map.battles.length).toBeGreaterThan(0);
+    expect(map.battles.some((b) => !b.fight.outcome)).toBe(true);
+    expect(hasPendingActivity(map)).toBe(true);
+  });
 });
