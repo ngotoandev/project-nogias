@@ -975,3 +975,39 @@ describe('enemyArmies foundation', () => {
     expect(hashMap(withEnemy)).not.toBe(h0);               // present ⇒ folded
   });
 });
+
+// ── Task 3: advanceEnemyArmies — march to nearest player tile + assault ──────
+
+describe('advanceEnemyArmies', () => {
+  // s0 (enemy, ea1) — E — s1 (enemy) — E — t (player, defended by garrison g1)
+  const march = () => initConquest({ tiles: [
+    { id: 's0', type: 'enemy', owner: 'enemy', neighbors: { E: 's1' }, garrison: [] },
+    { id: 's1', type: 'enemy', owner: 'enemy', neighbors: { W: 's0', E: 't' }, garrison: [] },
+    { id: 't',  type: 'enemy', owner: 'player', neighbors: { W: 's1' }, garrison: [u('g1','B',5)] },
+  ], armies: [], enemyArmies: [{ id: 'ea1', tile: 's0', units: [u('e1','A',20)] }] } as any, 0);
+
+  it('selects the nearest player tile and starts travelling (no gauge the tick it sets out)', () => {
+    const m = march();
+    advance(m, []);
+    expect(m.enemyArmies[0]!.state).toBe('travelling');
+    expect(m.enemyArmies[0]!.target).toBe('t');
+    expect(m.enemyArmies[0]!.travelGauge).toBe(0);          // set out this tick ⇒ no accumulation yet
+  });
+  it('marches over enemy ground and assaults the target (enemy-attacker battle opens)', () => {
+    const m = march();
+    // Drive until the army is consumed into the assault (army str=20 vs a single str=5 garrison
+    // unit is decisive enough that the battle can open AND resolve within the SAME advance() call
+    // — same as the player-arrival case at "advance steps active battles by STEPS_PER_MAP_TICK..."
+    // above — so we don't assert on the transient m.battles.length here; the 'sortie' event is the
+    // durable proof that openEnemyAttack (an enemy-attacker battle) actually opened at 't'.
+    for (let i = 0; i < 50 && m.enemyArmies.length > 0; i++) advance(m, []);
+    expect(m.events.some((e) => e.t === 'sortie' && e.tile === 't')).toBe(true);
+    expect(m.enemyArmies.length).toBe(0);                   // army consumed into the assault
+  });
+  it('an enemy army with no reachable player tile stays idle', () => {
+    const m = initConquest({ tiles: [{ id: 's', type: 'enemy', owner: 'enemy', neighbors: {}, garrison: [] }],
+      armies: [], enemyArmies: [{ id: 'ea1', tile: 's', units: [u('e1','A',5)] }] } as any, 0);
+    advance(m, []);
+    expect(m.enemyArmies[0]!.state).toBe('garrisoned');
+  });
+});

@@ -394,6 +394,9 @@ export function advance(state: MapState, commands: MapCommand[]): MapState {
   const travellingBefore = new Set(
     state.armies.filter((a) => a.state === 'travelling' || a.state === 'retreating').map((a) => a.id),
   );
+  const enemyTravellingBefore = new Set(
+    state.enemyArmies.filter((a) => a.state === 'travelling').map((a) => a.id),
+  );
 
   const sorted = commands.slice().sort((a, b) => {
     if (a.t < b.t) return -1;
@@ -424,6 +427,9 @@ export function advance(state: MapState, commands: MapCommand[]): MapState {
       }
     }
   }
+
+  // Enemy-army phase: march + assault (no-op when there are no enemy armies).
+  advanceEnemyArmies(state, enemyTravellingBefore);
 
   // Battle-step phase: step each active battle STEPS_PER_MAP_TICK times per map tick.
   // Battles are iterated in tile-id order (state.battles is kept sorted by tile id).
@@ -615,6 +621,104 @@ export function openSortie(state: MapState, source: MapTile, target: MapTile): v
   // defends with ALL armies on the tile; the run-layer only sorties stationary-defended tiles, so no
   // transient passer-by can be caught today — revisit (gate on garrisoned/contested) once enemy mobile armies exist.
   openEnemyAttack(state, target, source.id, source.garrison, () => { source.garrison = []; });
+}
+
+// ── advanceEnemyArmies: enemy mobile armies march to the nearest player tile and assault ─────
+
+function removeEnemyArmy(state: MapState, army: Army): void {
+  const i = state.enemyArmies.indexOf(army);
+  if (i !== -1) state.enemyArmies.splice(i, 1);
+}
+
+// BFS from fromId over ENEMY-owned tiles; the nearest enemy tile with a player-owned
+// neighbor is the launch tile and that player neighbor is the target. Deterministic
+// (N/S/E/W expansion + queue order). Returns { target, route: [...enemy path, target] } or null.
+function nearestPlayerAssault(state: MapState, fromId: string): { target: string; route: string[] } | null {
+  const start = tileById(state, fromId);
+  if (!start || start.owner !== 'enemy') return null;
+  const adjPlayer = (tile: MapTile): string | undefined => {
+    for (const e of EDGES) { const nb = tile.neighbors[e]; if (nb) { const t = tileById(state, nb); if (t && t.owner === 'player') return nb; } }
+    return undefined;
+  };
+  const here = adjPlayer(start);
+  if (here) return { target: here, route: [here] };
+  const visited = new Set<string>([fromId]);
+  const parent = new Map<string, string>();
+  const queue: string[] = [fromId];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    const tile = tileById(state, cur);
+    if (!tile) continue;
+    for (const e of EDGES) {
+      const nb = tile.neighbors[e];
+      if (!nb || visited.has(nb)) continue;
+      const nt = tileById(state, nb);
+      if (!nt || nt.owner !== 'enemy') continue;
+      visited.add(nb); parent.set(nb, cur); queue.push(nb);
+      const tgt = adjPlayer(nt);
+      if (tgt) {
+        const path: string[] = []; let node: string = nb;
+        while (node !== fromId) { path.unshift(node); node = parent.get(node)!; }
+        path.push(tgt);
+        return { target: tgt, route: path };
+      }
+    }
+  }
+  return null;
+}
+
+// Assault a player tile with the (consumed) enemy army's units.
+function enemyArmyAssault(state: MapState, army: Army, targetId: string): void {
+  const target = tileById(state, targetId)!;
+  const defenders = state.armies.filter((a) => a.tile === targetId);
+  if (target.garrison.length === 0 && defenders.length === 0) {
+    // undefended → fight-free capture (mirror of the player capturing undefended ground)
+    target.owner = 'enemy';
+    target.garrison = army.units.map(cloneSpec);
+    removeEnemyArmy(state, army);
+    state.events.push({ t: 'captured', tile: targetId, by: '-' });
+    return;
+  }
+  openEnemyAttack(state, target, army.tile, army.units, () => removeEnemyArmy(state, army));
+}
+
+function advanceEnemyArmies(state: MapState, travellingBefore: Set<string>): void {
+  for (const army of state.enemyArmies.slice().sort(byId)) {
+    if (army.state === 'garrisoned') {
+      const plan = nearestPlayerAssault(state, army.tile);
+      if (!plan) continue;                                   // no reachable player tile → stay idle
+      army.state = 'travelling';
+      army.target = plan.target;
+      army.route = plan.route;
+      army.travelGauge = 0;
+      const launchId = plan.route.length >= 2 ? plan.route[plan.route.length - 2]! : army.tile;
+      army.gate = gateOf(tileById(state, plan.target)!, launchId);
+      state.events.push({ t: 'dispatched', armyId: army.id, toTile: plan.target });
+      continue;                                              // set out this tick ⇒ no accumulation yet
+    }
+    if (army.state !== 'travelling' || !travellingBefore.has(army.id)) continue;
+    army.travelGauge += slowestTempo(army);
+    while (army.travelGauge >= TRAVEL_THRESHOLD && army.route && army.route.length > 0) {
+      army.travelGauge -= TRAVEL_THRESHOLD;
+      if (army.route.length === 1) {                         // last element = player target → assault from launch tile
+        const targetId = army.route[0]!;
+        const target = tileById(state, targetId);
+        if (!target || target.owner !== 'player') {          // target flipped away → disband
+          removeEnemyArmy(state, army);
+        } else if (state.battles.some((b) => b.tile === targetId)) {
+          // a battle is already underway here → wait (retry next accumulation); keep route
+        } else {
+          army.route = [];
+          enemyArmyAssault(state, army, targetId);
+        }
+        break;
+      }
+      const from = army.tile;
+      const next = army.route.shift()!;
+      army.tile = next;                                      // hop onto next enemy tile
+      state.events.push({ t: 'hopped', armyId: army.id, from, to: next });
+    }
+  }
 }
 
 // True while there is live in-flight activity: an army marching (travelling) or

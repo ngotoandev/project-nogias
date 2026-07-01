@@ -750,3 +750,28 @@ it('boss capture wins the run even if a sortie event opens on another tile that 
   expect(run.map.tiles.find((x) => x.id === 'boss')!.owner).toBe('player');
   expect(run.status).toBe('won');
 });
+
+// ── Task 3: enemy mobile armies march + assault (end-to-end via runTick) ────
+
+it('enemy army marches and takes a defended player tile on a win (army becomes the garrison)', () => {
+  const run = initRun({ tiles: [
+    { id: 's0', type: 'enemy', owner: 'enemy', neighbors: { E: 't' }, garrison: [] },
+    { id: 't',  type: 'enemy', owner: 'player', neighbors: { W: 's0' }, garrison: [u('g1','B',1)] },
+    { id: 'k',  type: 'start', owner: 'player', neighbors: {}, garrison: [] },
+  ], armies: [{ id: 'keep', tile: 'k', units: [u('ku','A',5)] }],
+     enemyArmies: [{ id: 'ea1', tile: 's0', units: [u('e1','A',20)] }] } as any, 1);
+  for (let i = 0; i < 120 && run.status === 'active'; i++) runTick(run, []);
+  expect(run.map.tiles.find((t) => t.id === 't')!.owner).toBe('enemy');
+  expect(run.map.enemyArmies.length).toBe(0);              // consumed → became t's garrison
+  expect(run.status).toBe('active');                        // 'keep' survives
+});
+it("an enemy army that destroys the player's LAST army loses the run", () => {
+  const run = initRun({ tiles: [
+    { id: 's0', type: 'enemy', owner: 'enemy', neighbors: { E: 't' }, garrison: [] },
+    { id: 't',  type: 'enemy', owner: 'player', neighbors: { W: 's0' }, garrison: [] },
+  ], armies: [{ id: 'd', tile: 't', units: [u('du','A',1)] }],
+     enemyArmies: [{ id: 'ea1', tile: 's0', units: [u('e1','A',20)] }] } as any, 1);
+  for (let i = 0; i < 120 && run.status === 'active'; i++) runTick(run, []);
+  expect(run.map.tiles.find((t) => t.id === 't')!.owner).toBe('enemy');
+  expect(run.status).toBe('lost');
+});
