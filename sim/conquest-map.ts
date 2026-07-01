@@ -596,19 +596,25 @@ function buildSortieSetup(state: MapState, target: MapTile, source: MapTile,
   return { setup: { grid, units }, seed: fightSeed(state.seed, target.id) };
 }
 
-export function openSortie(state: MapState, source: MapTile, target: MapTile): void {
-  // defends with ALL armies on the tile; the run-layer only sorties stationary-defended tiles, so no
-  // transient passer-by can be caught today — revisit (gate on garrisoned/contested) once enemy mobile armies exist.
+function openEnemyAttack(state: MapState, target: MapTile, sourceTileId: string,
+  attackerUnits: UnitSpec[], consume: () => void): void {
+  const source = tileById(state, sourceTileId)!;
   const defenderArmies = state.armies.filter((a) => a.tile === target.id);
-  const attackerGarrison = source.garrison.slice();              // stash originals (attackKind lost from fight Unit)
+  const attackerGarrison = attackerUnits.slice();               // stash originals (attackKind lost from fight Unit)
   const { setup, seed } = buildSortieSetup(state, target, source, defenderArmies, attackerGarrison);
   const fight = initFight(setup, seed);
-  source.garrison = [];                                          // committed to the sortie
+  consume();
   state.battles.push({ tile: target.id, fight, attackerOwner: 'enemy', attackerGarrison });
   state.battles.sort((a, b) => (a.tile < b.tile ? -1 : a.tile > b.tile ? 1 : 0));
   const gate = gateOf(target, source.id);
   for (const army of defenderArmies) { army.state = 'contested'; army.target = target.id; army.gate = gate; }
-  state.events.push({ t: 'sortie', tile: target.id, from: source.id });
+  state.events.push({ t: 'sortie', tile: target.id, from: sourceTileId });
+}
+
+export function openSortie(state: MapState, source: MapTile, target: MapTile): void {
+  // defends with ALL armies on the tile; the run-layer only sorties stationary-defended tiles, so no
+  // transient passer-by can be caught today — revisit (gate on garrisoned/contested) once enemy mobile armies exist.
+  openEnemyAttack(state, target, source.id, source.garrison, () => { source.garrison = []; });
 }
 
 // True while there is live in-flight activity: an army marching (travelling) or
